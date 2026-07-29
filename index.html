@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="zh-Hant" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Hank Kuo — Senior Design Consultant. 自我介紹網站。" />
+    <title>HANK KUO ©2026</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23071759'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='16' font-weight='700' fill='%23fff' text-anchor='middle'%3EH%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@100..900&family=Noto+Sans+TC:wght@100..900&display=swap"
+      rel="stylesheet"
+    />
+    <script type="module" crossorigin src="./assets/index-BxK63aCc.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-Dw2U4yik.css">
+  </head>
+  <body>
+    <!-- z:-2 背景色層（藍 → 黑），墊在 WebGL canvas 底下 -->
+    <div class="bg-layer" id="bgLayer" aria-hidden="true"></div>
+
+    <!-- z:-1 WebGL 圖層：全站所有圖片都畫在這裡，DOM 只留空的佔位框 -->
+    <canvas class="gl-layer" id="glCanvas" aria-hidden="true"></canvas>
+
+    <div class="page-rail" id="pageRail" aria-hidden="true"></div>
+    <p class="page-count" id="pageCount" aria-hidden="true">01 / 10</p>
+
+    <!-- 開場載入層：載入條跑完 → 點陣溶解掀開 hero -->
+    <div class="loader" id="loader" aria-hidden="true">
+      <span class="loader-bar"><i id="loaderFill"></i></span>
+    </div>
+
+    <!-- 掉落貼紙：固定全螢幕層，不被 section 的 overflow 切掉，
+         離開第一頁後會凍結並轉成灰階半透明 -->
+    <div class="falling fall-layer" id="heroFalling" aria-hidden="true"></div>
+
+    <div class="cursor-layer" id="cursorLayer" aria-hidden="true">
+      <canvas class="cursor-trail" id="cursorTrail"></canvas>
+      <div class="cursor-glow"></div>
+      <div class="cursor-line"></div>
+    </div>
+
+    <!-- 照片幻燈片：點時間軸的照片放大看原圖 -->
+    <div class="lightbox" id="lightbox" hidden>
+      <button class="lb-close" id="lbClose" aria-label="關閉">✕</button>
+      <button class="lb-prev" id="lbPrev" aria-label="上一張">‹</button>
+      <img class="lb-img" id="lbImg" alt="" />
+      <video class="lb-video" id="lbVideo" controls loop playsinline hidden></video>
+      <button class="lb-next" id="lbNext" aria-label="下一張">›</button>
+      <p class="lb-count" id="lbCount"></p>
+    </div>
+
+    <main class="track" id="track">
+      <!-- 01 HERO -->
+      <section class="section hero" id="hero">
+        <div class="grid-lines"></div>
+
+        <div class="hero-top">
+          <p class="hero-brand" data-scramble="0">PRODUCT<br />DESIGNER</p>
+
+          <p class="hero-note" id="clock" data-scramble="150">GMT+8 TPE --:--</p>
+
+          <p class="hero-intro" data-scramble="260">
+            產品設計第八年，現在在 EY 安永。<br />
+            麥當勞的甜心卡、全家的 My FamiPort 都是我做的。<br />
+            AI 是我的日常工具，設計完自己接著寫成網站。
+          </p>
+        </div>
+
+        <span class="hero-hello-wrap">
+          <span
+          class="hero-hello gl-image"
+          data-gl-src="images/hero-hello.png"
+          data-gl-real
+          data-gl-order="100"
+          data-gl-glass
+          data-gl-strength="1.35"
+          data-gl-label="HERO / MAIN GRAPHIC"
+          data-gl-color="#2b46a8"
+          data-gl-ratio="1693/929"
+          ></span>
+        </span>
+        <span
+          class="hero-cursor gl-image"
+          data-gl-src="images/cursor-arrow.png"
+          data-gl-real
+          data-gl-order="90"
+          data-gl-glass
+          data-gl-strength="1.1"
+          data-gl-label="HERO / CURSOR"
+          data-gl-color="#3358c8"
+          data-gl-ratio="1/1"
+        ></span>
+
+        <div class="hero-bottom">
+          <h1 class="hero-title" id="heroTitle">
+          <span class="type-line">I AM HANK,</span>
+          <span class="type-line">I TURN COMPLEX</span>
+          <span class="type-line">INTO OBVIOUS</span>
+          </h1>
+
+          <div class="hero-meta">
+          <ul class="skill-tags">
+            <li data-scramble="1150">UI/UX DESIGN</li>
+            <li data-scramble="1260">UX RESEARCH</li>
+            <li data-scramble="1370">UX STRATEGY</li>
+            <li data-scramble="1480">AI WORKFLOW</li>
+          </ul>
+          <button class="hero-cta" data-go="1" data-scramble="1600">
+              VIEW EXPERIENCE <span aria-hidden="true">↗</span>
+            </button>
+          </div>
+        </div>
+
+        <p class="hero-scroll" data-scramble="1720">SCROLL</p>
+      </section>
+
+      <!-- 02 ABOUT：依 hank-portfolio-wp/src/views/ResumeView.vue 結構，資料取自 resume.js -->
+      <section class="section about" id="about">
+        <div class="grid-lines"></div>
+        <p class="kicker">ABOUT</p>
+
+        <div class="fig-fit">
+          <div class="fig-cols">
+            <!-- 左欄：sticky -->
+            <div class="fig-left">
+
+              <span class="rs-avatar gl-image" data-gl-src="images/avatar.png" data-gl-real></span>
+
+              <div class="rs-intro">
+                <p>Hi，我是郭翰廷，Hank。</p>
+                <p>白天做產品設計，第八年，習慣把亂七八糟的需求整理成一句話講得完的東西。麥當勞的甜心卡、全家的 My FamiPort 都是這樣做出來的。</p>
+                <p>台南人。家裡有爸媽、一個姊姊一個妹妹，現在跟老婆和兩隻黑貓住在一起。</p>
+                <p>剛認識的時候我會有點害羞，但不是不喜歡跟人相處——熟起來之後話反而蠻多的。</p>
+                <p>下班後是兩隻黑貓的鏟屎官。興趣很多，潛水、養鹿角蕨、爬山輪流玩，最近迷的是釣魚。下一個想試滑雪跟衝浪。</p>
+              </div>
+
+              <dl class="rs-facts">
+                <div><dt>生日</dt><dd>1989.12.30</dd></div>
+                <div><dt>星座</dt><dd>摩羯座</dd></div>
+                <div><dt>家鄉</dt><dd>台南</dd></div>
+                <div><dt>現居</dt><dd>五股</dd></div>
+                <div><dt>家中成員</dt><dd>老婆、兩隻貓</dd></div>
+              </dl>
+
+            </div>
+
+            <!-- 右欄：捲動 -->
+            <div class="fig-right">
+              <div class="rs-block">
+                <h2 class="rs-title"><span class="rs-sq"></span>專業技能</h2>
+                <div class="rs-group">
+                  <p class="rs-cat"><span class="rs-dot"></span>使用者經驗設計</p>
+                  <p class="rs-skill">使用者研究 / 訪談 / 需求洞察 / 設計策略 / 問題定義 / 設計思考</p>
+                </div>
+                <div class="rs-group">
+                  <p class="rs-cat"><span class="rs-dot"></span>介面設計</p>
+                  <p class="rs-skill">視覺與平面設計 / 使用者介面設計 / 微互動設計 / 設計系統建置與維護 / 原型製作</p>
+                </div>
+                <div class="rs-group">
+                  <p class="rs-cat"><span class="rs-dot"></span>跨領域協作</p>
+                  <p class="rs-skill">跨平台整合與溝通 / 基礎前端技術理解 / 設計與開發協作</p>
+                </div>
+                <div class="rs-group">
+                  <p class="rs-cat"><span class="rs-dot"></span>Ai應用</p>
+                  <p class="rs-skill">CLI 自動化數據搜集 / AI 輔助質性分析 / Vibe Coding / 研究到前端網站實作</p>
+                </div>
+              </div>
+
+              <div class="rs-block">
+                <h2 class="rs-title"><span class="rs-sq"></span>工作經歷</h2>
+                <div class="rs-exp">
+                  <div class="rs-exp-head">
+                    <span class="rs-dot"></span>
+                    <div>
+                      <h3 class="rs-exp-co">鴻緯科技股份有限公司</h3>
+                      <p class="rs-exp-role">Web Designer　2018/2 – 2018/10</p>
+                    </div>
+                  </div>
+
+                  <ul class="rs-exp-list">
+                    <li>一間新創公司，那時候在做區塊鏈商城，我負責整體視覺跟介面。</li>
+                    <li>重新設計結帳流程和會員中心，也開始學著把 UI 規範寫下來。</li>
+                  </ul>
+
+                </div>
+                <div class="rs-exp">
+                  <div class="rs-exp-head">
+                    <span class="rs-dot"></span>
+                    <div>
+                      <h3 class="rs-exp-co">振作國際股份有限公司</h3>
+                      <p class="rs-exp-role">Web Designer　2018/11 – 2020/3</p>
+                    </div>
+                  </div>
+
+                  <ul class="rs-exp-list">
+                    <li>這裡主要做品牌形象網站，吉美建設、振宇五金、新美齊集團、GMC 捷美運通都經手過。</li>
+                    <li>從視覺定調、版面規劃一路到切版上線都要顧，第一次完整走過一個網站從無到有的流程。</li>
+                    <li>也做過電商平台改版，第一次感覺到設計調整之後，數字真的會變。</li>
+                  </ul>
+
+                </div>
+                <div class="rs-exp">
+                  <div class="rs-exp-head">
+                    <span class="rs-dot"></span>
+                    <div>
+                      <h3 class="rs-exp-co">EY 安永諮詢服務股份有限公司</h3>
+                      <p class="rs-exp-role">Senior Design Consultant　2023/4 – 至今</p>
+                    </div>
+                  </div>
+
+                  <ul class="rs-exp-list">
+                    <li>做過幾個大型品牌的產品，像麥當勞的甜心卡與點數中心、全家的 My FamiPort 和記帳本。</li>
+                    <li>參與跨部門的大型工作坊，一整天把八個商流部門的想法收攏成同一個方向。</li>
+                    <li>用 AI 工具自己把 SCCG 供應鏈資安平台從研究、設計做到網站。</li>
+                  </ul>
+
+                </div>
+              </div>
+
+              <div class="rs-block">
+                <h2 class="rs-title"><span class="rs-sq"></span>代表作品</h2>
+                <div class="rs-work">
+                  <p class="rs-co"><span class="rs-dot"></span>麥當勞 McDonald's</p>
+                  <div class="rs-shots">
+                    <span class="rs-shot gl-image" data-gl-src="uploads/project_1_5322c21a9f.png" data-gl-real></span>
+                    <span class="rs-shot gl-image" data-gl-src="uploads/project_2_c34d50b358.png" data-gl-real></span>
+                  </div>
+                  <p class="rs-desc">作品 : 數位甜心卡 ＆ 點數中心 UI/UX 設計</p>
+                  <p class="rs-res-label">成果 :</p>
+                  <p class="rs-res">實現無斷點體驗，讓甜心卡優惠能直接於手機點餐流程中核銷，大幅減少門市排隊人流</p>
+                </div>
+                <div class="rs-work">
+                  <p class="rs-co"><span class="rs-dot"></span>全家便利商店 MyFamiPort</p>
+                  <div class="rs-shots">
+                    <span class="rs-shot gl-image" data-gl-src="uploads/project_4_53f546fda1.png" data-gl-real></span>
+                  </div>
+                  <p class="rs-desc">作品 : 記帳本 ＆ 遊戲中心 UI/UX 設計 &amp; My FamiPort App 重構</p>
+                  <p class="rs-res-label">成果 :</p>
+                  <p class="rs-res">記帳本 : 解決發票管理痛點，帶動新用戶註冊成長 10%</p>
+                  <p class="rs-res">遊戲中心 : 創造點數循環經濟，單檔活動吸引 20 億點數投入</p>
+                  <p class="rs-res">MyFamiPort : 用戶規模顯著成長：Google Play 下載突破 100 萬次，會員數超越 1,450 萬人</p>
+                </div>
+              </div>
+
+              <div class="rs-block rs-block--life">
+                <h2 class="rs-title"><span class="rs-sq"></span>生活</h2>
+
+                <p class="tl-lead">興趣是一陣一陣的，玩過的東西一輪一輪換。</p>
+
+                <div class="tl-viewport" data-gl-clip>
+                  <div class="tl-track" id="lifeTrack">
+                    <article class="tl-stop">
+                      <div class="tl-head">
+                        <svg class="line-art tl-art" viewBox="0 0 300 200" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+                        <path class="ln-g" style="--ld: 0ms" pathLength="100" d="M84 80C84 64 98 56 118 56L208 56C228 56 240 64 240 80L240 104C240 124 226 136 206 136L194 136C184 136 177 131 172 122L165 110C161 103 155 103 151 110L144 122C139 131 132 136 122 136L110 136C90 136 84 124 84 104Z" />
+                        <path class="ln-g" style="--ld: 460ms" pathLength="100" d="M160 58L160 106" />
+                        <path class="ln-g" style="--ld: 620ms" pathLength="100" d="M240 88C258 83 272 86 280 96" />
+                        <path class="ln-g" style="--ld: 760ms" pathLength="100" d="M84 88C74 84 66 84 60 88" />
+                        <path class="ln-g" style="--ld: 900ms" pathLength="100" d="M46 146C32 124 28 74 32 48C34 33 44 25 58 26" />
+                        <path class="ln-g" style="--ld: 1180ms" pathLength="100" d="M46 146C50 157 60 160 70 155" />
+                        <circle class="ln-y" style="--ld: 1360ms" pathLength="100" cx="78" cy="18" r="4.5" />
+                        <circle class="ln-y" style="--ld: 1480ms" pathLength="100" cx="97" cy="8" r="6.5" />
+                        <circle class="ln-y" style="--ld: 1600ms" pathLength="100" cx="70" cy="6" r="2.4" />
+                        </svg>
+                                        <h3 class="tl-title">第一次下水，開始往外跑</h3>
+                      </div>
+                      <div class="tl-shots">
+                        <figure class="tl-shot"><span class="tl-media gl-image" data-gl-src="uploads/life-dive-03.jpg" data-gl-real style="aspect-ratio: 1568 / 1044" data-full="uploads/full/life-dive-03.jpg" role="button" tabindex="0"></span></figure>
+                        <figure class="tl-shot"><span class="tl-media gl-image" data-gl-src="uploads/life-dive-04.jpg" data-gl-real style="aspect-ratio: 1568 / 1044" data-full="uploads/full/life-dive-04.jpg" role="button" tabindex="0"></span></figure>
+                        <figure class="tl-shot"><video class="tl-media life-video" style="aspect-ratio: 960 / 540" src="uploads/life-dive-clip.mp4" data-full="uploads/life-dive-clip.mp4" data-kind="video" role="button" tabindex="0" muted loop playsinline preload="metadata"></video></figure>
+                        <figure class="tl-shot"><span class="tl-media gl-image" data-gl-src="uploads/life-dive-05.jpg" data-gl-real style="aspect-ratio: 1568 / 1044" data-full="uploads/full/life-dive-05.jpg" role="button" tabindex="0"></span></figure>
+                      </div>
+                    </article>
+                    <article class="tl-stop">
+                      <div class="tl-head">
+                        <svg class="line-art tl-art" viewBox="0 0 300 200" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+                        <path class="ln-g" style="--ld: 0ms" pathLength="100" d="M18 138L72 72L104 108L150 52L196 106L226 82L286 138" />
+                        <path class="ln-g" style="--ld: 700ms" pathLength="100" d="M52 176L248 176" />
+                        <path class="ln-g" style="--ld: 860ms" pathLength="100" d="M92 176L130 106L168 176" />
+                        <path class="ln-g" style="--ld: 1120ms" pathLength="100" d="M130 106C116 128 112 156 110 176" />
+                        <path class="ln-g" style="--ld: 1300ms" pathLength="100" d="M186 174L214 164" />
+                        <path class="ln-g" style="--ld: 1400ms" pathLength="100" d="M186 164L214 174" />
+                        <path class="ln-y" style="--ld: 1500ms" pathLength="100" d="M200 160C194 151 200 142 201 134C205 143 212 150 207 160" />
+                        <circle class="ln-y" style="--ld: 1680ms" pathLength="100" cx="240" cy="44" r="11" />
+                        <path class="ln-y" style="--ld: 1820ms" pathLength="100" d="M264 24L272 16M266 62L276 68M214 26L206 18" />
+                        </svg>
+                                        <h3 class="tl-title">被帶去爬山跟露營⋯⋯</h3>
+                      </div>
+                      <div class="tl-shots">
+                        <figure class="tl-shot"><span class="tl-media gl-image" data-gl-src="uploads/life-hike-01.jpg" data-gl-real style="aspect-ratio: 1600 / 1200" data-full="uploads/full/life-hike-01.jpg" role="button" tabindex="0"></span></figure>
+                        <figure class="tl-shot"><span class="tl-media gl-image" data-gl-src="uploads/life-hike-06.jpg" data-gl-real style="aspect-ratio: 675 / 1200" data-full="uploads/full/life-hike-06.jpg" role="button" tabindex="0"></span></figure>
+                        <figure class="tl-shot"><span class="tl-media gl-image" data-gl-src="uploads/life-hike-05.jpg" data-gl-real style="aspect-ratio: 800 / 1200" data-full="uploads/full/life-hike-05.jpg" role="button" tabindex="0"></span></figure>
+                        <figure class="tl-shot"><span class="tl-media gl-image" data-gl-src="uploads/life-hike-10.jpg" data-gl-real style="aspect-ratio: 1600 / 900" data-full="uploads/full/life-hike-10.jpg" role="button" tabindex="0"></span></figure>
+                        <figure class="tl-shot"><span class="tl-media gl-image" data-gl-src="uploads/life-hike-08.jpg" data-gl-real style="aspect-ratio: 1600 / 1067" data-full="uploads/full/life-hike-08.jpg" role="button" tabindex="0"></span></figure>
+                        <figure class="tl-shot"><span class="tl-media gl-image" data-gl-src="uploads/life-hike-09.jpg" data-gl-real style="aspect-ratio: 1600 / 1067" data-full="uploads/full/life-hike-09.jpg" role="button" tabindex="0"></span></figure>
+                        <figure class="tl-shot"><span class="tl-media gl-image" data-gl-src="uploads/life-hike-04.jpg" data-gl-real style="aspect-ratio: 1477 / 1108" data-full="uploads/full/life-hike-04.jpg" role="button" tabindex="0"></span></figure>
+                        <figure class="tl-shot"><span class="tl-media gl-image" data-gl-src="uploads/life-hike-02.jpg" data-gl-real style="aspect-ratio: 1600 / 1200" data-full="uploads/full/life-hike-02.jpg" role="button" tabindex="0"></span></figure>
+                        <figure class="tl-shot"><span class="tl-media gl-image" data-gl-src="uploads/life-hike-07.jpg" data-gl-real style="aspect-ratio: 675 / 1200" data-full="uploads/full/life-hike-07.jpg" role="button" tabindex="0"></span></figure>
+                        <figure class="tl-shot"><span class="tl-media gl-image" data-gl-src="uploads/life-hike-03.jpg" data-gl-real style="aspect-ratio: 900 / 1200" data-full="uploads/full/life-hike-03.jpg" role="button" tabindex="0"></span></figure>
+                      </div>
+                    </article>
+                    <article class="tl-stop">
+                      <div class="tl-head">
+                        <svg class="line-art tl-art" viewBox="0 0 300 200" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+                        <path class="ln-g" style="--ld: 0ms" pathLength="100" d="M96 184C90 168 94 152 108 145C118 140 126 145 136 142C147 139 154 143 164 145C180 149 190 164 192 184Z" />
+                        <path class="ln-g" style="--ld: 480ms" pathLength="100" d="M118 145C106 124 92 108 74 94" />
+                        <path class="ln-g" style="--ld: 700ms" pathLength="100" d="M96 116C88 102 84 88 86 72" />
+                        <path class="ln-g" style="--ld: 860ms" pathLength="100" d="M74 94C68 80 66 68 70 56" />
+                        <path class="ln-g" style="--ld: 1000ms" pathLength="100" d="M130 142C124 116 120 92 126 66" />
+                        <path class="ln-g" style="--ld: 1180ms" pathLength="100" d="M124 92C114 82 104 76 92 74" />
+                        <path class="ln-g" style="--ld: 1300ms" pathLength="100" d="M148 142C146 112 150 82 160 54" />
+                        <path class="ln-g" style="--ld: 1480ms" pathLength="100" d="M152 88C162 78 174 72 186 70" />
+                        <path class="ln-g" style="--ld: 1620ms" pathLength="100" d="M160 54C164 42 172 34 182 30" />
+                        <path class="ln-g" style="--ld: 1740ms" pathLength="100" d="M166 146C182 126 200 108 220 98" />
+                        <path class="ln-g" style="--ld: 1900ms" pathLength="100" d="M202 108C206 94 208 82 206 68" />
+                        <path class="ln-g" style="--ld: 2020ms" pathLength="100" d="M220 98C228 88 234 78 236 66" />
+                        <path class="ln-y" style="--ld: 2140ms" pathLength="100" d="M182 30L188 22" />
+                        <path class="ln-y" style="--ld: 2220ms" pathLength="100" d="M70 56L68 46" />
+                        <path class="ln-y" style="--ld: 2300ms" pathLength="100" d="M236 66L240 56" />
+                        </svg>
+                                        <h3 class="tl-title">在咖啡廳看到一整面鹿角蕨，回家就開始養</h3>
+                      </div>
+                      <div class="tl-shots">
+                        <figure class="tl-shot"><span class="tl-media gl-image" data-gl-src="uploads/life-plant-01.jpg" data-gl-real style="aspect-ratio: 900 / 1200" data-full="uploads/full/life-plant-01.jpg" role="button" tabindex="0"></span></figure>
+                        <figure class="tl-shot"><span class="tl-media gl-image" data-gl-src="uploads/life-plant-02.jpg" data-gl-real style="aspect-ratio: 900 / 1200" data-full="uploads/full/life-plant-02.jpg" role="button" tabindex="0"></span></figure>
+                        <figure class="tl-shot"><span class="tl-media gl-image" data-gl-src="uploads/life-plant-03.jpg" data-gl-real style="aspect-ratio: 900 / 1200" data-full="uploads/full/life-plant-03.jpg" role="button" tabindex="0"></span></figure>
+                        <figure class="tl-shot"><span class="tl-media gl-image" data-gl-src="uploads/life-plant-04.jpg" data-gl-real style="aspect-ratio: 900 / 1200" data-full="uploads/full/life-plant-04.jpg" role="button" tabindex="0"></span></figure>
+                      </div>
+                    </article>
+                    <article class="tl-stop">
+                      <div class="tl-head">
+                        <svg class="line-art tl-art" viewBox="0 0 300 200" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+                        <path class="ln-g" style="--ld: 0ms" pathLength="100" d="M24 176L182 46" />
+                        <path class="ln-g" style="--ld: 420ms" pathLength="100" d="M52 153C46 143 52 131 64 130C74 129 82 136 82 146C82 154 76 160 68 161" />
+                        <path class="ln-g" style="--ld: 700ms" pathLength="100" d="M182 46C202 68 212 98 208 126" />
+                        <circle class="ln-y" style="--ld: 980ms" pathLength="100" cx="208" cy="134" r="7" />
+                        <path class="ln-g" style="--ld: 1160ms" pathLength="100" d="M172 174C186 160 212 158 230 172C212 186 186 188 172 174Z" />
+                        <path class="ln-g" style="--ld: 1420ms" pathLength="100" d="M172 174L152 163L152 185Z" />
+                        <circle class="ln-y" style="--ld: 1600ms" pathLength="100" cx="216" cy="170" r="2.6" />
+                        <path class="ln-g" style="--ld: 1720ms" pathLength="100" d="M96 168C108 162 118 174 130 168" />
+                        </svg>
+                                        <h3 class="tl-title">迷上釣魚</h3>
+                      </div>
+                      <div class="tl-shots">
+                        <figure class="tl-shot"><span class="tl-media gl-image" data-gl-src="uploads/life-fish-02.jpg" data-gl-real style="aspect-ratio: 900 / 1200" data-full="uploads/full/life-fish-02.jpg" role="button" tabindex="0"></span></figure>
+                        <figure class="tl-shot"><span class="tl-media gl-image" data-gl-src="uploads/life-fish-01.jpg" data-gl-real style="aspect-ratio: 1200 / 1200" data-full="uploads/full/life-fish-01.jpg" role="button" tabindex="0"></span></figure>
+                      </div>
+                    </article>
+                    <article class="tl-stop is-last">
+                      <div class="tl-head">
+                        <svg class="line-art tl-art" viewBox="0 0 300 200" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+                        <path class="ln-g" style="--ld: 0ms" pathLength="100" d="M92 182C80 176 74 162 76 140C79 108 92 72 106 48C114 34 126 30 134 40C142 50 142 66 138 88C132 122 118 158 106 176C102 182 97 184 92 182Z" />
+                        <path class="ln-g" style="--ld: 700ms" pathLength="100" d="M104 92L128 78" />
+                        <path class="ln-g" style="--ld: 820ms" pathLength="100" d="M96 128L120 114" />
+                        <path class="ln-g" style="--ld: 960ms" pathLength="100" d="M186 184C176 176 174 160 180 140C190 106 208 70 224 50C234 38 246 38 252 50C258 62 254 82 246 104C234 138 214 170 200 182C195 186 190 187 186 184Z" />
+                        <path class="ln-g" style="--ld: 1620ms" pathLength="100" d="M214 106C220 100 228 100 234 104" />
+                        <path class="ln-y" style="--ld: 1780ms" pathLength="100" d="M150 46C150 32 160 22 174 24C186 26 192 36 188 46C184 56 172 58 170 68" />
+                        <circle class="ln-y" style="--ld: 2020ms" pathLength="100" cx="169" cy="82" r="3" />
+                        </svg>
+                                        <h3 class="tl-title">滑雪？衝浪？還不知道</h3>
+                      </div>
+                      <div class="tl-shots">
+                      </div>
+                    </article>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 05 FAMILY -->
+      <!-- 03 LIFE：縱向時間軸，興趣一段一段換 -->
+      <!-- 07 ENDING -->
+      <section class="section ending" id="ending">
+        <div class="grid-lines"></div>
+        <p class="kicker">ENDING</p>
+
+        <div class="ending-mid">
+          <!-- 逐字浮現＋亂碼跳字，跟首頁大標同一套（見 main.js playType） -->
+          <h2 class="big-statement" id="endingTitle">
+            <span class="type-line">NICE TO MEET YOU</span>
+          </h2>
+          <p class="ending-line" data-scramble="620">
+            <span class="ending-bar" aria-hidden="true"></span>以上是我工作經歷與生活，在 104 往後的日子裡請大家多指教。
+          </p>
+        </div>
+
+        <p class="ending-foot" data-scramble="900">HANK KUO ©2026 — PRODUCT DESIGNER</p>
+      </section>
+    </main>
+
+  </body>
+</html>
