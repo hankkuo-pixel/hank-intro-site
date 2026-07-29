@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview:file": "npm run build && node scripts/make-preview.cjs",
     "preview": "vite preview --host 127.0.0.1 --port 8092",
+    "standalone": "npm run build && node scripts/make-standalone.cjs",
     "verify": "node scripts/verify.cjs"
   },
   "dependencies": {
