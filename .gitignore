@@ -1,0 +1,15 @@
+# 相依套件（npm install 可還原）
+node_modules/
+
+# 建置產物（npm run build 可重生）
+dist/
+
+# 驗證截圖（開發過程產物）
+verify-shots/
+
+# 系統檔
+.DS_Store
+*.log
+
+# 損毀備份
+*.corrupt

@@ -1,0 +1,26 @@
+:root {
+  --accent: #c0fe04;
+  --bg-dark: #191b1b;
+  --hero-blue: #172a9e;
+  --hero-blue-glow: #2a3fd0;
+  --label-1: #ffffff;
+  --label-2: rgba(255, 255, 255, 0.58);
+  --label-3: rgba(255, 255, 255, 0.28);
+  --line: rgba(255, 255, 255, 0.1);
+  --bg-1: var(--bg-dark);
+  --bg-elevated: #202323;
+  --font-sans: 'Inter Variable', 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', ui-monospace, monospace;
+  --font-zh: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-hero: clamp(2.5rem, 6vw, 5.5rem);
+  --text-lead: clamp(1.5rem, 3vw, 2.75rem);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --dur-page: 900ms;
+  --dur-enter: 620ms;
+  --dur-hover: 200ms;
+  --page-pad-x: clamp(1rem, 3.5vw, 3.5rem);
+}

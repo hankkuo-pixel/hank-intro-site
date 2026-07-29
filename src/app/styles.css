@@ -1,0 +1,1494 @@
+/* =========================================================
+   HANK KUO ©2026 — intro site
+   一頁一畫面（full-page）：每個 .section 剛好一個視窗高，
+   切頁時該頁的動畫重播（.is-active）。
+   圖片不在 DOM，全部由 WebGL 畫（.gl-image 只是空佔位框）。
+   ========================================================= */
+
+:root {
+  --cubic-66: cubic-bezier(0.66, 0, 0.01, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  --blue: #071759;
+  --ink: #080909;
+  --accent: #c0fe04;
+  /* 舞台：整站限寬 1920，超出的部分裁掉、內容置中 */
+  --stage: 1920px;
+  --gutter: max(0px, calc((100vw - var(--stage)) / 2));
+  --paper: #f7f7f0;
+  --pad: clamp(1rem, 2.7vw, 3rem);
+  --nav-h: 2.6rem;
+  /* 與 hank-kuo.com 一致：標題 League Spartan、內文 Noto Sans TC。
+     等寬維持原樣 —— 時鐘、頁碼、亂碼跳字動畫都靠等寬才不會抖 */
+  --font-heading: "League Spartan", sans-serif;
+  --font-body: "Noto Sans TC", sans-serif;
+  --mono: "SFMono-Regular", ui-monospace, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--ink);
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  color: #fff;
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  /* 必須保持透明：.bg-layer 與 .gl-layer 是 z-index 為負的子層，
+     一旦 body 有底色就會蓋掉它們（body 背景的繪製順序在負 z 之後） */
+  background: transparent;
+  cursor: none;
+  /* 不能加 overflow-x: hidden —— 會讓 body 變成捲動容器，
+     底下所有 position: sticky 都會失效（實測左欄 sticky 完全沒作用） */
+}
+
+button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: none;
+}
+
+/* ---------- 背景色層 (z:-2)：藍 → 黑，墊在 canvas 底下 ---------- */
+.bg-layer {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background: var(--ink);
+  pointer-events: none;
+}
+
+
+/* ---------- WebGL 圖層 (z:-1) ---------- */
+.gl-layer {
+  position: fixed;
+  inset: 0 var(--gutter);
+  z-index: -1;
+  width: auto;
+  height: 100dvh;
+  pointer-events: none;
+}
+
+/* ---------- 一頁一畫面 ---------- */
+.track {
+  position: relative;
+  max-width: var(--stage);
+  margin: 0 auto;
+}
+
+.section {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100dvh;
+  padding: var(--nav-h) var(--pad) 4.5rem;
+  overflow: hidden;
+}
+
+.grid-lines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.3;
+}
+
+.grid-lines::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent 0 28.57%, rgba(255, 255, 255, 0.14) 28.57% calc(28.57% + 1px), transparent calc(28.57% + 1px) 100%),
+    linear-gradient(0deg, transparent 0 34.5%, rgba(255, 255, 255, 0.12) 34.5% calc(34.5% + 1px), transparent calc(34.5% + 1px) 100%);
+  background-size: 28.57% 100%, 100% 34.5%;
+}
+
+/* ---------- 固定 UI ---------- */
+.nav {
+  position: fixed;
+  z-index: 20;
+  inset: 1.65rem calc(var(--pad) + var(--gutter)) auto;
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  mix-blend-mode: difference;
+}
+
+.nav-brand {
+  font-weight: 700;
+}
+
+.nav-c {
+  opacity: 0.5;
+  margin-left: 0.35rem;
+}
+
+.nav-links {
+  display: flex;
+  gap: clamp(1rem, 4vw, 4rem);
+}
+
+.nav-links button {
+  opacity: 0.72;
+  transition: opacity 0.3s cubic-bezier(0, 0, 0.2, 1);
+}
+
+.nav-links button:hover,
+.nav-links button.is-active {
+  opacity: 1;
+}
+
+.page-rail {
+  position: fixed;
+  z-index: 30;
+  right: calc(1.05rem + var(--gutter));
+  top: 50%;
+  width: 2px;
+  height: 11rem;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.page-rail button {
+  position: absolute;
+  left: -5px;
+  width: 12px;
+  height: calc(100% / var(--section-count, 10));
+  background: transparent;
+  transition: background 220ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.page-rail button.is-active,
+.page-rail button:hover {
+  background: #fff;
+}
+
+.page-count {
+  position: fixed;
+  z-index: 30;
+  right: calc(var(--pad) + var(--gutter));
+  bottom: 1.6rem;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.45);
+  mix-blend-mode: difference;
+}
+
+/* ---------- 開場載入 ---------- */
+.loader {
+  position: fixed;
+  inset: 0 var(--gutter);
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  background: #111313;
+  pointer-events: none;
+  transition: background-color 0.75s cubic-bezier(0.66, 0, 0.01, 1);
+}
+
+body.intro-revealing .loader {
+  background-color: rgba(17, 19, 19, 0);
+}
+
+body.intro-done .loader {
+  display: none;
+}
+
+.loader-bar {
+  position: relative;
+  display: block;
+  width: 140px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.22);
+  transition: opacity 0.4s linear;
+}
+
+body.intro-revealing .loader-bar {
+  opacity: 0;
+  transition-delay: 0.45s;
+}
+
+.loader-bar i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 0%;
+  background: #fff;
+}
+
+.cursor-layer {
+  position: fixed;
+  inset: 0 var(--gutter);
+  z-index: 80;
+  pointer-events: none;
+}
+
+/* 綠色劃線軌跡（第一頁之外） */
+.cursor-trail {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 1;
+  transition: opacity 0.4s cubic-bezier(0, 0, 0.2, 1);
+}
+
+body.cursor-glow-on .cursor-trail {
+  opacity: 0;
+}
+
+.cursor-glow,
+.cursor-line {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translate3d(calc(var(--cursor-x, -400) * 1px - 50%), calc(var(--cursor-y, -400) * 1px - 50%), 0);
+  transition: opacity 0.4s cubic-bezier(0, 0, 0.2, 1);
+  will-change: transform;
+}
+
+/* 第一頁：光暈 */
+.cursor-glow {
+  width: 440px;
+  height: 440px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(160, 200, 255, 0.22),
+    rgba(90, 140, 255, 0.1) 42%,
+    transparent 68%
+  );
+  mix-blend-mode: screen;
+  opacity: 0;
+}
+
+body.cursor-glow-on .cursor-glow {
+  opacity: 1;
+}
+
+/* 第一頁之後：綠色線條十字 */
+.cursor-line {
+  width: 34px;
+  height: 34px;
+  opacity: 0;
+}
+
+.cursor-line::before,
+.cursor-line::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: #c0fe04;
+}
+
+.cursor-line::before {
+  width: 100%;
+  height: 1px;
+  transform: translate(-50%, -50%);
+}
+
+.cursor-line::after {
+  width: 1px;
+  height: 100%;
+  transform: translate(-50%, -50%);
+}
+
+body:not(.cursor-glow-on) .cursor-line {
+  opacity: 1;
+}
+
+/* 滑到圖片上時放大 */
+.is-hovering-media .cursor-line {
+  width: 66px;
+  height: 66px;
+}
+
+.is-hovering-media .cursor-glow {
+  width: 560px;
+  height: 560px;
+}
+
+/* ---------- 切頁動畫 ----------
+   .is-active 由 JS 在該頁成為目前頁時加上、離開時移除 → 每次切回來都會重播。
+   延遲寫在 HTML 的 style="transition-delay: 140ms"。 */
+.mask {
+  display: block;
+  overflow: hidden;
+}
+
+.mask > span {
+  display: block;
+  transform: translateY(110%);
+  transition: transform 1.2s cubic-bezier(0.66, 0, 0.01, 1);
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(26px);
+  transition:
+    opacity 0.66s cubic-bezier(0.66, 0, 0.01, 1),
+    transform 0.66s cubic-bezier(0.66, 0, 0.01, 1);
+}
+
+/* 要等開場溶解跑完才放行，否則首頁的進場全部在黑幕後面播完，掀開時已經定位 */
+body.intro-done .section.is-active .mask > span {
+  transform: translateY(0);
+}
+
+body.intro-done .section.is-active .reveal {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ---------- WebGL 圖片佔位框 ---------- */
+.gl-image {
+  display: block;
+  position: relative;
+}
+
+.gl-fallback .gl-image {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* ---------- 共用小標 ---------- */
+.kicker {
+  flex: none;
+  margin: 0 0 clamp(1.5rem, 4vh, 3rem);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  color: rgba(247, 247, 240, 0.5);
+}
+
+/* ---------- 01 HERO ---------- */
+.hero {
+  justify-content: space-between;
+  padding-bottom: 4rem;
+}
+
+.hero-top {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+/* 字級與右上的簡介一致（同 mono、同 0.74rem） */
+.hero-brand {
+  grid-column: 1 / span 3;
+  margin: 0.4rem 0 0;
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  font-weight: 400;
+  line-height: 1.7;
+  letter-spacing: 0.02em;
+}
+
+.hero-note,
+.hero-intro {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  line-height: 1.7;
+  letter-spacing: 0.02em;
+}
+
+/* 時鐘置中：佔中間四欄並置中對齊，正好是視窗中線 */
+.hero-note {
+  grid-column: 5 / span 4;
+  margin: 0.4rem 0 0;
+  opacity: 0.7;
+  text-align: center;
+}
+
+/* 簡介靠右上角：文字也靠右對齊，才貼得住那個角 */
+.hero-intro {
+  grid-column: 9 / span 4;
+  margin: 0.4rem 0 0;
+  color: rgba(255, 255, 255, 0.86);
+  text-align: right;
+}
+
+/* 標題打字動畫：字元先以螢光綠出現，再轉白 */
+.type-line {
+  display: block;
+}
+
+.type-char {
+  display: inline-block;
+  white-space: pre;
+  opacity: 0;
+  color: #c0fe04;
+  transition: color 0.22s linear;
+}
+
+.type-char.is-in {
+  opacity: 1;
+}
+
+.type-char.is-done {
+  color: inherit;
+}
+
+.hero-title {
+  font-family: var(--font-heading);
+  position: relative;
+  z-index: 4;
+  margin: 0;
+  max-width: 80vw;
+  font-size: clamp(2.6rem, 7.6vw, 6.4rem);
+  font-weight: 900;
+  line-height: 0.94;
+  letter-spacing: -0.01em;
+}
+
+/* 標題 + 標籤列整組貼齊左下角 */
+.hero-bottom {
+  margin-top: auto;
+}
+
+/* hello 分兩層：
+   外框負責「進場縮放」與「切頁時的 3D 轉出」，
+   內層跑漂浮的 transform keyframes——兩者共用 transform 會打架。 */
+.hero-hello-wrap {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  top: 50%;
+  width: min(74vw, 94rem);
+  aspect-ratio: 1693 / 929;
+  transform: translate(-50%, -58%);
+  /* 進場 0.8 → 1；出場 1 → 0.4。3D 旋轉與透明度在 shader（見 gl.js） */
+  scale: 0.8;
+  transition: scale 1.35s cubic-bezier(0.66, 0, 0.01, 1);
+}
+
+body.intro-done .hero-hello-wrap {
+  scale: 1;
+}
+
+/* 切走第一頁 → 縮到 0.4（3D 翻轉與淡出在 shader 裡做，見 gl.js） */
+body.intro-done:not(.hero-active) .hero-hello-wrap {
+  scale: 0.4;
+  transition: scale 1.15s cubic-bezier(0.66, 0, 0.01, 1);
+}
+
+.hero-hello {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: auto;
+  animation: hello-float 9s ease-in-out infinite;
+  animation-play-state: paused;
+}
+
+body.intro-done .hero-hello {
+  animation-play-state: running;
+}
+
+@keyframes hello-float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-0.5deg);
+  }
+  33% {
+    transform: translate3d(6px, -14px, 0) rotate(0.4deg);
+  }
+  66% {
+    transform: translate3d(-5px, -6px, 0) rotate(0.7deg);
+  }
+}
+
+.hero-cursor {
+  position: absolute;
+  z-index: 4;
+  right: 9.4vw;
+  bottom: 16dvh;
+  width: clamp(5rem, 7.4vw, 18rem);
+  aspect-ratio: 1;
+  pointer-events: auto;
+}
+
+/* 技能標籤 + 履歷按鈕：跟格線、四角文字同一套語彙（細框、方角、mono） */
+.hero-meta {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: clamp(1rem, 2.6vh, 2rem);
+  flex-wrap: wrap;
+}
+
+.skill-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 邊框等字跑完才出現（由 main.js 在該標籤 scramble 結束時加 .is-lit） */
+.skill-tags li {
+  padding: 0.42rem 1rem;
+  border: 1px solid transparent;
+  /* 底部堆滿螢光色貼紙，沒有這層底字會讀不出來 */
+  background: rgba(8, 9, 9, 0.66);
+  transition: border-color 0.45s cubic-bezier(0.66, 0, 0.01, 1);
+  font-family: var(--mono);
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.skill-tags li.is-lit {
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.hero-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid transparent;
+  background: rgba(8, 9, 9, 0.66);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  color: #fff;
+  pointer-events: auto;
+  transition:
+    background-color 0.3s cubic-bezier(0, 0, 0.2, 1),
+    border-color 0.3s cubic-bezier(0, 0, 0.2, 1);
+}
+
+.hero-cta.is-lit {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.hero-cta:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.8);
+}
+
+.hero-scroll {
+  position: absolute;
+  left: var(--pad);
+  bottom: 1.6rem;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.22em;
+  opacity: 0.55;
+}
+
+/* ---------- 掉落符號 ---------- */
+.falling {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.falling span {
+  position: absolute;
+  left: calc(18% + var(--i) * 10%);
+  top: calc(8% + (var(--i) % 3) * 15%);
+  display: grid;
+  place-items: center;
+  min-width: 2.15rem;
+  height: 2.15rem;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.6);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  opacity: 0;
+  animation: fall 8.5s linear infinite paused;
+  animation-delay: calc(var(--i) * -1.1s);
+}
+
+.section.is-active .falling span {
+  animation-play-state: running;
+}
+
+/* 掉落貼紙的固定層：只有在第一頁時動畫在跑，離開就凍在原地 */
+.fall-layer {
+  position: fixed;
+  inset: 0 var(--gutter);
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.45s cubic-bezier(0.66, 0, 0.01, 1);
+}
+
+/* 離開第一頁 → 整層淡出消失；回到第一頁會整組重新下 */
+body:not(.hero-active) .fall-layer {
+  opacity: 0;
+}
+
+body.hero-active .fall-layer span {
+  animation-play-state: running;
+}
+
+/* ---- 掉落貼紙 ----
+   參數（--x/--size/--dur/--delay/--drift/--r0/--r1）由 main.js 隨機給，
+   每跑完一輪再重新隨機一次，所以路徑不會重複。
+   終點是 118vh：一定掉出畫面底部才重來，不會掉到一半消失。 */
+.falling span.fall-img {
+  left: 0;
+  top: 0;
+  width: var(--size, 140px);
+  height: var(--size, 140px);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  animation: none;
+  will-change: transform;
+}
+
+
+@keyframes fall {
+  0% {
+    transform: translate3d(0, -48px, 0) rotate(0deg);
+    opacity: 0;
+  }
+  14%,
+  72% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(18px, 150px, 0) rotate(220deg);
+    opacity: 0;
+  }
+}
+
+/* ---------- 02 ABOUT：左右兩欄 ----------
+   全部數值直接取自 Figma 2:650，不做等比縮放也不自行調整：
+   容器 1200 / 欄距 120 / 右欄 550
+   內文 17px、行高 30px、段距 30px
+   標題 24px ExtraBold、字距 .5px
+   公司 18px Heavy、行高 24px；職稱年份 16px #7A7A7A
+   條列 17px / 行高 30px
+   進度條 高 16px、圓角 20px、底 #7A7A7A、值 #58FF45
+   綠點 10px，位於左 -18px、上 7px */
+.about {
+  height: auto;
+  min-height: 100dvh;
+  /* sticky 需要祖先不是 overflow:hidden，否則會把 section 當成捲動容器而失效 */
+  overflow: visible;
+}
+
+/* ---------- 02 ABOUT：結構取自 hank-portfolio-wp ResumeView.vue，去掉卡片底色 ---------- */
+.fig-fit {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.fig-cols {
+  display: flex;
+  gap: 96px;
+  align-items: flex-start;
+  width: 1600px;
+  max-width: 100%;
+}
+
+/* 左欄釘住，右欄跟著捲 */
+.fig-left {
+  flex: 0 0 400px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  position: sticky;
+  top: var(--nav-h);
+  align-self: flex-start;
+  max-height: calc(100dvh - var(--nav-h) - 2rem);
+  overflow: hidden;
+}
+
+.fig-right {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
+}
+
+/* --- 左欄頭部：直排 Hello + 頭像 + 姓名 --- */
+/* 小檔案：生日 / 星座 / MBTI */
+.rs-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 28px;
+  margin: 0;
+  padding-top: 4px;
+  border-top: 1px solid rgba(247, 247, 240, 0.12);
+}
+
+.rs-facts > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.rs-facts dt {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: rgba(247, 247, 240, 0.42);
+}
+
+.rs-facts dd {
+  margin: 0;
+  font-size: 14px;
+  color: rgba(247, 247, 240, 0.86);
+}
+
+.rs-facts dd[data-fill] {
+  color: rgba(247, 247, 240, 0.3);
+  font-style: italic;
+}
+
+.rs-name h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+}
+
+.rs-name p {
+  margin: 4px 0 0;
+  font-family: var(--font-body);
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  color: rgba(247, 247, 240, 0.55);
+}
+
+.rs-avatar {
+  display: block;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex: none;
+}
+
+/* --- 自我介紹段落 --- */
+.rs-intro p {
+  margin: 0 0 12px;
+  font-size: 16px;
+  line-height: 25px;
+  color: rgba(247, 247, 240, 0.86);
+}
+
+.rs-intro p:last-child {
+  margin-bottom: 0;
+}
+
+/* --- 區塊標題：方形色塊 + 文字 --- */
+.rs-block {
+  display: flex;
+  flex-direction: column;
+}
+
+.rs-title {
+  font-family: var(--font-heading);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 16px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.rs-sq {
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  flex: none;
+}
+
+.rs-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+  margin-top: 12px;
+}
+
+/* --- 專業技能 --- */
+.rs-group {
+  margin-bottom: 12px;
+}
+
+.rs-group:last-child {
+  margin-bottom: 0;
+}
+
+.rs-cat {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 2px;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 32px;
+}
+
+.rs-cat .rs-dot {
+  margin-top: 12px;
+}
+
+.rs-skill {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 16px;
+  line-height: 32px;
+  color: rgba(247, 247, 240, 0.66);
+}
+
+/* --- 右欄：代表作品 --- */
+.rs-work {
+  margin-bottom: 28px;
+}
+
+.rs-work:last-child {
+  margin-bottom: 0;
+}
+
+.rs-co {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 26px;
+}
+
+/* 代表作品縮圖：Figma 3:52 規格 144×144、間距 24px */
+.rs-shots {
+  display: flex;
+  gap: 24px;
+  margin: 15px 0 12px 18px;
+}
+
+.rs-shot {
+  display: block;
+  width: 144px;
+  height: 144px;
+  flex: none;
+}
+
+.rs-desc {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  font-size: 16px;
+  line-height: 32px;
+  color: rgba(247, 247, 240, 0.8);
+}
+
+.rs-res-label {
+  margin: 0 0 4px;
+  padding-left: 18px;
+  font-size: 16px;
+  font-weight: 700;
+  color: rgba(247, 247, 240, 0.55);
+}
+
+.rs-res {
+  margin: 0 0 6px;
+  padding-left: 18px;
+  font-size: 16px;
+  line-height: 32px;
+  color: rgba(247, 247, 240, 0.72);
+}
+
+/* --- 右欄：工作經歷 --- */
+.rs-exp {
+  margin-bottom: 30px;
+}
+
+.rs-exp:last-child {
+  margin-bottom: 0;
+}
+
+.rs-exp-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.rs-exp-co {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 32px;
+}
+
+.rs-exp-role {
+  margin: 6px 0 0;
+  font-family: var(--mono);
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  color: rgba(247, 247, 240, 0.5);
+}
+
+.rs-exp-list {
+  margin: 0;
+  padding-left: 18px;
+  list-style: none;
+  counter-reset: rsexp;
+}
+
+.rs-exp-list li {
+  counter-increment: rsexp;
+  position: relative;
+  padding-left: 26px;
+  margin-bottom: 8px;
+  font-size: 16px;
+  line-height: 28px;
+  color: rgba(247, 247, 240, 0.78);
+}
+
+.rs-exp-list li::before {
+  content: counter(rsexp) ".";
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 28px;
+  color: rgba(247, 247, 240, 0.4);
+}
+
+.rs-exp-list li:last-child {
+  margin-bottom: 0;
+}
+
+/* ---------- 照片幻燈片 ---------- */
+.lightbox {
+  position: fixed;
+  inset: 0 var(--gutter);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 7, 7, 0.94);
+  opacity: 0;
+  transition: opacity 0.32s var(--ease-out);
+}
+
+.lightbox[hidden] {
+  display: none;
+}
+
+.lightbox.is-open {
+  opacity: 1;
+}
+
+.lb-video {
+  max-width: min(88vw, 1600px);
+  max-height: 86dvh;
+  outline: none;
+}
+
+.lb-video[hidden],
+.lb-img[hidden] {
+  display: none;
+}
+
+.lb-img {
+  max-width: min(88vw, 1600px);
+  max-height: 86dvh;
+  object-fit: contain;
+  transform: scale(0.97);
+  transition: transform 0.32s var(--cubic-66);
+}
+
+.lightbox.is-open .lb-img {
+  transform: scale(1);
+}
+
+.lightbox button {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border: 1px solid rgba(247, 247, 240, 0.18);
+  border-radius: 50%;
+  background: rgba(12, 14, 14, 0.6);
+  color: rgba(247, 247, 240, 0.8);
+  font-size: 22px;
+  line-height: 1;
+  transition: border-color 0.25s, color 0.25s;
+}
+
+.lightbox button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.lb-close {
+  top: 1.4rem;
+  right: 1.4rem;
+  font-size: 16px !important;
+}
+
+.lb-prev {
+  left: 1.6rem;
+}
+
+.lb-next {
+  right: 1.6rem;
+}
+
+.lb-count {
+  position: absolute;
+  left: 50%;
+  bottom: 1.5rem;
+  transform: translateX(-50%);
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  color: rgba(247, 247, 240, 0.45);
+}
+
+/* 時間軸的引言 */
+.tl-lead {
+  width: var(--stage-inner, 1600px);
+  max-width: 100%;
+  margin: 2.4rem auto 0;
+  font-size: 15px;
+  color: rgba(247, 247, 240, 0.6);
+}
+
+/* ---------- 03 LIFE：縱向時間軸 ---------- */
+.life {
+  height: auto;
+  min-height: 100dvh;
+  overflow: visible;
+}
+
+.tl-viewport {
+  position: relative;
+  flex: 1;
+  width: var(--stage-inner, 1600px);
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 1rem 0 3rem;
+}
+
+/* 貫穿整段的縱軸 */
+.tl-axis {
+  position: absolute;
+  left: 7px;
+  top: 1.6rem;
+  bottom: 3rem;
+  width: 1px;
+  background: linear-gradient(180deg, rgba(247, 247, 240, 0.28), rgba(247, 247, 240, 0.06));
+}
+
+.tl-track {
+  display: flex;
+  flex-direction: column;
+  gap: 4.5rem;
+}
+
+.tl-stop {
+  position: relative;
+  padding-left: 46px;
+}
+
+/* 軸上的節點 */
+.tl-mark {
+  position: absolute;
+  left: 0;
+  top: 6px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1px solid rgba(247, 247, 240, 0.3);
+  background: var(--ink);
+}
+
+.tl-mark::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.tl-head {
+  margin-bottom: 1.2rem;
+}
+
+.tl-year {
+  margin: 0 0 4px;
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
+
+.tl-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+/* 每一站的照片：高度統一、寬度依原圖比例，橫排放不下就換行 */
+.tl-shots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.tl-shot {
+  margin: 0;
+  flex: none;
+}
+
+.tl-media {
+  display: block;
+  height: 340px;
+  width: auto;
+  cursor: pointer;
+}
+
+.tl-shot .gl-image:not([data-gl-real]) {
+  width: 272px;
+}
+
+/* 最後一站沒有照片，節點畫成空心 */
+.tl-stop.is-last .tl-mark::after {
+  inset: 4px;
+  background: transparent;
+  border: 1px solid var(--accent);
+}
+
+.tl-stop.is-last .tl-title {
+  color: rgba(247, 247, 240, 0.55);
+}
+
+.life-dots {
+  flex: none;
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.life-dots button {
+  width: 26px;
+  height: 2px;
+  padding: 0;
+  border: 0;
+  background: rgba(247, 247, 240, 0.22);
+  transition: background-color 0.4s var(--ease-out);
+}
+
+.life-dots button.is-active {
+  background: var(--accent);
+}
+
+/* ---------- 06 ENDING ---------- */
+.ending {
+  justify-content: space-between;
+}
+
+.interest-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.interest {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: rgba(247, 247, 240, 0.8);
+  text-align: center;
+}
+
+.interest-box {
+  display: block;
+  width: min(10vw, 7.5rem);
+  min-width: 5rem;
+  aspect-ratio: 1;
+  margin: 0 auto 0.9rem;
+  border: 1px solid rgba(247, 247, 240, 0.14);
+}
+
+.interest i {
+  display: block;
+  margin: 0.6rem auto 0;
+  max-width: 11rem;
+  color: rgba(247, 247, 240, 0.45);
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-style: normal;
+  line-height: 1.8;
+  letter-spacing: 0;
+}
+
+.water {
+  background: linear-gradient(140deg, #061a2b, #2b83bf);
+}
+.hiking {
+  background: linear-gradient(140deg, #1a241c, #7fa35b);
+}
+.diving {
+  background: linear-gradient(140deg, #02131a, #00a8c8);
+}
+.fern {
+  background: linear-gradient(140deg, #172016, #7da34d);
+}
+.fishing {
+  background: linear-gradient(140deg, #15181c, #5e8ba8);
+}
+
+.big-statement {
+  margin: 0;
+  max-width: 80vw;
+  font-size: clamp(2.4rem, 6.4vw, 7rem);
+  font-weight: 900;
+  line-height: 0.94;
+}
+
+/* 大標與那句話要黏在一起：section 是 space-between，不包起來就會被推開 */
+.ending-mid {
+  display: flex;
+  flex-direction: column;
+}
+
+.ending-line {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 24px 0 0;
+  max-width: 42rem;
+  font-size: 17px;
+  line-height: 32px;
+  color: rgba(247, 247, 240, 0.86);
+}
+
+.ending-bar {
+  flex: none;
+  width: 4px;
+  height: 18px;
+  background: var(--accent);
+  transform: translateY(2px);
+}
+
+.ending-foot {
+  margin: 1.2rem 0 0;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  color: rgba(247, 247, 240, 0.4);
+}
+
+/* ---------- RWD ---------- */
+@media (max-width: 900px) {
+  :root {
+    --nav-h: 2.2rem;
+  }
+
+  body {
+    cursor: auto;
+  }
+  button {
+    cursor: pointer;
+  }
+  .cursor-layer,
+  .page-rail {
+    display: none;
+  }
+
+  .section {
+    padding-bottom: 3.5rem;
+  }
+
+  .nav {
+    font-size: 0.58rem;
+  }
+
+  .nav-links {
+    gap: 0.85rem;
+  }
+
+  .hero-top {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .hero-brand,
+  .hero-note,
+  .hero-intro {
+    grid-column: 1;
+  }
+
+  .hero-intro {
+    max-width: 32rem;
+  }
+
+  /* 標題打字動畫：字元先以螢光綠出現，再轉白 */
+.type-line {
+  display: block;
+}
+
+.type-char {
+  display: inline-block;
+  white-space: pre;
+  opacity: 0;
+  color: #c0fe04;
+  transition: color 0.22s linear;
+}
+
+.type-char.is-in {
+  opacity: 1;
+}
+
+.type-char.is-done {
+  color: inherit;
+}
+
+.hero-title {
+    max-width: none;
+    font-size: clamp(2.2rem, 10.5vw, 4.2rem);
+  }
+
+  .hero-hello-wrap {
+    top: 58%;
+    width: 150vw;
+  }
+
+  .hero-cursor {
+    bottom: 24dvh;
+    width: 4.5rem;
+  }
+
+  /* ABOUT：手機直向堆疊 */
+  .about-split {
+    grid-template-columns: 1fr;
+    align-content: center;
+    gap: 1.6rem;
+  }
+
+  .about-media {
+    grid-column: 1;
+    max-height: 30dvh;
+  }
+
+  .about-media .gl-image {
+    width: auto;
+    height: 30dvh;
+    max-height: 30dvh;
+  }
+
+  .about-copy {
+    grid-column: 1;
+  }
+
+  .about-copy p {
+    margin-top: 1.2rem;
+    font-size: 0.95rem;
+    line-height: 1.75;
+  }
+
+  /* EXPERIENCE：手機單欄可捲 */
+  .ex-grid {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+    overflow-y: auto;
+  }
+
+  /* WORK：手機改單欄，可捲 */
+
+  .fam-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
+
+  .fam-card .gl-image {
+    max-height: 24dvh;
+  }
+
+  .tl-track {
+    grid-template-columns: 1fr;
+    column-gap: 0;
+  }
+
+  .tl-axis {
+    left: 0;
+  }
+
+  .tl-stop.is-left,
+  .tl-stop.is-right {
+    grid-column: 1;
+    align-items: flex-start;
+    text-align: left;
+    padding-left: 2.5rem;
+  }
+
+  .tl-stop.is-left::after,
+  .tl-stop.is-right::after {
+    left: 0;
+    right: auto;
+    margin: -3.5px 0 0 -3px;
+  }
+
+  .tl-stop.is-left::before,
+  .tl-stop.is-right::before {
+    left: 0;
+    right: auto;
+    width: 1.6rem;
+  }
+
+  .interest i {
+    display: none;
+  }
+
+  .interest-box {
+    width: 100%;
+    min-width: 0;
+  }
+}
