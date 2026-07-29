@@ -11,13 +11,20 @@ import { createGlLayer, glConfig } from "./gl.js"
 import { createFallPile, fallConfig } from "./fall.js"
 
 /* ---------- Lenis：只當作切頁的動畫引擎，不接受滾輪自由滾動 ---------- */
+/* 導覽模式總開關
+   true  = 一頁一畫面：滾輪被攔截，一次跳一頁（原本的行為）
+   false = 一般連續捲動：滾輪照常，整份文件平順地捲，區塊進場改由「捲進視窗」觸發
+   兩種模式的進場動畫都會播，差別只在有沒有整頁吸附。 */
+const PAGED = false
+
 const lenis = new Lenis({
   duration: 1.15,
   easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)), // expo out
-  smoothWheel: false,
+  smoothWheel: !PAGED, // 連續模式下讓 lenis 接管滾輪，捲起來才平順
   autoRaf: false,
 })
-lenis.stop()
+if (PAGED) lenis.stop()
+document.body.classList.toggle("mode-flow", !PAGED)
 
 /* ---------- WebGL 圖層 ---------- */
 const canvas = document.getElementById("glCanvas")
@@ -36,7 +43,7 @@ const clockEl = document.getElementById("clock")
 /* ---------- hero 掉落貼紙 ----------
    清單改這裡就好，檔案放 public/images/fall/<name>-cut.png（去背後的檔）。
    位置、大小、時間、飄移、旋轉全部隨機，而且每跑完一輪重新隨機一次。 */
-const STICKERS = ["star", "pen", "smiley", "rod", "shoe", "fin", "bottle", "palm"]
+const STICKERS = ["star", "nib", "smiley", "rod", "shoe", "fin", "bottle", "palm", "beer", "cat"]
 const heroFalling = document.getElementById("heroFalling")
 const fallPile = createFallPile(
   heroFalling,
@@ -102,7 +109,11 @@ function setWork(i, opts = {}) {
   }
 }
 
-const PAGE_DURATION = 1.15 // 切頁動畫秒數
+const clamp01 = (v) => Math.max(0, Math.min(1, v))
+let endRise = 0  // 0→1：越接近結尾越大，驅動藍色回歸
+let fallRise = 0 // 0→1：貼紙從底部往上浮散（結尾的收尾）
+
+const PAGE_DURATION = 0.9 // 切頁動畫秒數（1.15 太長，推的力道會被拖掉）
 const COOLDOWN = 260 // 動畫結束後再擋一下，避免觸控板慣性連跳
 
 let index = 0
@@ -121,8 +132,17 @@ sections.forEach((section, i) => {
 const railDots = [...pageRail.children]
 
 /* ---------- 切頁 ---------- */
-function setActive(i) {
-  sections.forEach((s, n) => s.classList.toggle("is-active", n === i))
+/* dir：+1 往下（新頁由下往上推進來）、-1 往回（新頁由上往下落）
+   舊頁標 .is-leaving，樣式讓它先加速走；新頁晚 120ms 才減速卡位，
+   這個時間差就是「被下面推上來」的來源（見 styles.css 切頁三層）。 */
+function setActive(i, dir = 1) {
+  const prev = sections.findIndex((s) => s.classList.contains("is-active"))
+  document.body.classList.toggle("nav-up", dir < 0)
+  document.body.classList.toggle("nav-down", dir >= 0)
+  sections.forEach((s, n) => {
+    s.classList.toggle("is-active", n === i)
+    s.classList.toggle("is-leaving", n === prev && prev !== i)
+  })
   railDots.forEach((d, n) => d.classList.toggle("is-active", n === i))
   navButtons.forEach((b) => b.classList.toggle("is-active", parseInt(b.dataset.go, 10) === i))
   if (pageCount) pageCount.textContent = `${String(i + 1).padStart(2, "0")} / ${String(sections.length).padStart(2, "0")}`
@@ -134,15 +154,26 @@ function setActive(i) {
   const wasHero = document.body.classList.contains("hero-active")
   document.body.classList.toggle("hero-active", i === 0 && document.body.classList.contains("intro-done"))
   if (gl) {
-    gl.setFallGhost(i !== 0)
+    gl.setFallGhost(i === 0 ? 0 : 1 - fallRise)
     // hero 主視覺：在第一頁時轉正且不透明，離開時轉開並淡出
     if (document.body.classList.contains("intro-done")) {
-      gl.setTurn(i === 0 ? 0 : 1)
-      gl.setHeroFade(i === 0 ? 1 : 0)
+      if (i === 0) {
+        // 回到第一頁不走原路倒帶：趁還全透明時瞬間擺到 -80°，再轉回 0，
+        // 看起來像它繼續往同方向轉了一圈回來，比倒帶有實體感。
+        if (prev > 0) gl.setTurnNow(-1)
+        gl.setTurn(0)
+        gl.setHeroFade(1)
+      } else {
+        gl.setTurn(1)
+        gl.setHeroFade(0)
+      }
     }
   }
   if (i === 0 && !wasHero && fallPile) fallPile.reset()
-  if (i === 0 && document.body.classList.contains("intro-done")) playType()
+  if (document.body.classList.contains("intro-done")) {
+    if (i === 0) playType()
+    else if (sections[i].id === "ending") playType(sections[i])
+  }
   // 這一頁的圖片重播進場（作品頁要連目前這張一起指定）
   if (gl) gl.setActive(sections[i], i === workPage ? workSlides[workIndex] : null)
   if (sections[i].id) history.replaceState(null, "", `#${sections[i].id}`)
@@ -155,18 +186,13 @@ function goTo(target, opts = {}) {
 
   const fromBelow = i < index
   index = i
+  freeTarget = null // 換頁後自由捲動的目標要重新起算
   subStep = fromBelow ? pageSteps(i) : 0
   if (i === workPage && workSlides.length) setWork(fromBelow ? lifeMax() : 0, { force: true, immediate: true })
   if (i === tlPage) setTl(fromBelow ? tlMax() : 0, { force: true, immediate: true })
-  // 生活頁的影片只在該頁播，離開就暫停（21MB，不在別頁空轉）
-  document.querySelectorAll(".life-video").forEach((v) => {
-    v.playbackRate = 1 / 1.5 // 放慢成 1.5 倍長：35.5 秒 → 53.3 秒
-    if (i === workPage) v.play().catch(() => {})
-    else v.pause()
-  })
-  setActive(i)
+  setActive(i, fromBelow ? -1 : 1)
 
-  locked = true
+  locked = PAGED // 連續模式不上鎖，否則點導覽跳頁後會有一秒不能捲
   clearTimeout(unlockTimer)
   lenis.scrollTo(sections[i].offsetTop + subOffset(i, subStep), {
     force: true,
@@ -182,24 +208,38 @@ function goTo(target, opts = {}) {
 let subStep = 0
 /* 內容比一屏長的頁面改成一般捲動 —— 分頁式在這種頁會一滾就衝過一大段。
    其他頁維持「一頁一畫面」，Hello 的進退場與背景漸變都還是綁在切頁事件上 */
-const FREE_SCROLL = new Set(["about", "family"])
+const FREE_SCROLL = new Set(["about"])
 function isFree(i) {
   return !!sections[i] && FREE_SCROLL.has(sections[i].id) && pageSteps(i) > 0
 }
 
-/* 在自由捲動頁：捲到頂/底才換頁，中間就照捲動距離走 */
+/* 在自由捲動頁：捲到頂/底才換頁，中間就照捲動距離走。
+   目標要用 freeTarget 累加，不能每次都從「目前位置」重算——
+   連續滾的時候上一格還在動，cur 永遠落後，累積不起來就會覺得超級慢。 */
+let freeTarget = null
+const FREE_SPEED = 0.8 // 比一般網頁略慢一點（1.15 的七成），配合這個站的節奏
+
 function freeScroll(dy) {
   const sec = sections[index]
   if (!sec) return
   const top = sec.offsetTop
   const bottom = top + Math.max(0, sec.scrollHeight - window.innerHeight)
   const cur = typeof lenis.scroll === "number" ? lenis.scroll : window.scrollY
-  const target = cur + dy
-  if (target < top - 6) return prev()
-  if (target > bottom + 6) return next()
-  lenis.scrollTo(Math.min(bottom, Math.max(top, target)), {
+  // 目標還在這一頁的範圍內就沿用，否則以目前位置重新起算
+  const base = freeTarget !== null && freeTarget >= top - 40 && freeTarget <= bottom + 40 ? freeTarget : cur
+  const target = base + dy * FREE_SPEED
+  if (target < top - 6) {
+    freeTarget = null
+    return prev()
+  }
+  if (target > bottom + 6) {
+    freeTarget = null
+    return next()
+  }
+  freeTarget = Math.min(bottom, Math.max(top, target))
+  lenis.scrollTo(freeTarget, {
     force: true, // lenis 平常是 stop 狀態（只當動畫引擎），沒有 force 不會動
-    duration: 0.32,
+    duration: 0.28,
     easing: (t) => 1 - Math.pow(1 - t, 3),
   })
 }
@@ -283,10 +323,72 @@ function setTl(i, opts = {}) {
   }
 }
 
+/* ---------- 捲到定位點才播 ----------
+   ABOUT 與 LIFE 比一個畫面長（見 FREE_SCROLL），整頁綁 .is-active 的話，
+   下半部的動畫在你還沒捲到就播完了。這兩頁的區塊改成各自進入視窗中段才觸發，
+   離開再拿掉 → 捲回去會重播，跟切頁的行為一致。 */
+const aboutSection = document.getElementById("about")
+const inViewObserver = new IntersectionObserver(
+  (entries) => {
+    for (const e of entries) {
+      e.target.classList.toggle("in-view", e.isIntersecting)
+      // 捲進「生活」之後把左欄（頭像＋自介）讓開，版面整個給照片
+      if (aboutSection && e.target.classList.contains("rs-block--life")) {
+        aboutSection.classList.toggle("life-open", e.isIntersecting)
+      }
+    }
+  },
+  { threshold: 0.12, rootMargin: "-8% 0px -12% 0px" }
+)
+document
+  .querySelectorAll(".tl-stop, .about .rs-block, .line-art, .section")
+  .forEach((el) => inViewObserver.observe(el))
+
+/* 潛水影片：捲進視窗才播、捲出去就暫停（21MB，不在看不到的地方空轉）。
+   原本綁的是「目前頁等於作品頁」，但作品頁那個變數是空的，所以影片從來沒被播放過。
+   自動播放必須靜音，瀏覽器才不會擋。 */
+const videoObserver = new IntersectionObserver(
+  (entries) => {
+    for (const e of entries) {
+      const v = e.target
+      v.muted = true
+      v.playsInline = true
+      v.playbackRate = 1 / 1.3 // 放慢成 1.3 倍長：35.5 秒 → 46.2 秒
+      if (e.isIntersecting) v.play().catch(() => {})
+      else v.pause()
+    }
+  },
+  { threshold: 0.3 }
+)
+document.querySelectorAll(".life-video").forEach((v) => videoObserver.observe(v))
+
+/* 連續模式：目前是第幾頁改由「哪一個區塊佔住畫面中央」決定，
+   右側頁碼、Hello 的轉正淡入、掉落貼紙都還是靠這個 index 在運作。 */
+let flowIndex = -1
+function syncFlowIndex() {
+  if (PAGED) return
+  const mid = window.scrollY + window.innerHeight / 2
+  let best = 0
+  for (let i = 0; i < sections.length; i++) {
+    const s = sections[i]
+    if (mid >= s.offsetTop && mid < s.offsetTop + s.offsetHeight) {
+      best = i
+      break
+    }
+    if (mid >= s.offsetTop) best = i
+  }
+  if (best === flowIndex) return
+  const dir = flowIndex === -1 || best > flowIndex ? 1 : -1
+  flowIndex = best
+  index = best
+  setActive(best, dir)
+}
+
 /* ---------- 輸入：滾輪 / 觸控 / 鍵盤 ---------- */
 window.addEventListener(
   "wheel",
   (e) => {
+    if (!PAGED) return // 連續模式：不攔截，交給 lenis
     e.preventDefault()
     if (lb && !lb.hidden) return
     if (locked) return
@@ -299,10 +401,11 @@ window.addEventListener(
 
 let touchStartY = null
 window.addEventListener("touchstart", (e) => (touchStartY = e.touches[0].clientY), { passive: true })
-window.addEventListener("touchmove", (e) => e.preventDefault(), { passive: false })
+window.addEventListener("touchmove", (e) => PAGED && e.preventDefault(), { passive: false })
 window.addEventListener(
   "touchend",
   (e) => {
+    if (!PAGED) return
     if (touchStartY === null || locked) return
     const dy = touchStartY - (e.changedTouches[0]?.clientY ?? touchStartY)
     if (isFree(index)) {
@@ -324,6 +427,9 @@ window.addEventListener("keydown", (e) => {
     else if (k === "ArrowLeft" || k === "ArrowUp") lbShow(lbIndex - 1)
     e.preventDefault()
     return
+  }
+  if (!PAGED && ["ArrowDown", "PageDown", " ", "ArrowUp", "PageUp"].includes(k)) {
+    return // 連續模式：方向鍵交給瀏覽器原生捲動
   }
   if (["ArrowDown", "PageDown", " "].includes(k)) {
     e.preventDefault()
@@ -390,14 +496,23 @@ if (heroTitle) {
     scrambleGroups.push({ el: line, offset: 380 + i * 120, chars: splitScramble(line) })
   })
 }
+// 結語大標也走同一套逐字動畫
+const endingTitle = document.getElementById("endingTitle")
+if (endingTitle) {
+  endingTitle.querySelectorAll(".type-line").forEach((line, i) => {
+    scrambleGroups.push({ el: line, offset: 260 + i * 120, chars: splitScramble(line) })
+  })
+}
 
-function playType() {
-  if (!scrambleGroups.length) return
+/* scope 給定時只重播該區塊內的字（結語頁用），不給就是整站（首頁用，維持原行為） */
+function playType(scope = null) {
+  const pool = scope ? scrambleGroups.filter((g) => scope.contains(g.el)) : scrambleGroups
+  if (!pool.length) return
   cancelAnimationFrame(typeRaf)
 
   const plan = []
   const groups = []
-  for (const g of scrambleGroups) {
+  for (const g of pool) {
     if (g.el) g.el.classList.remove("is-lit")
     const mine = []
     groups.push({ el: g.el, items: mine })
@@ -517,7 +632,8 @@ if (cursorLayer) {
       if (trail.length > 160) trail.shift()
     }
   })
-  document.querySelectorAll(".gl-image").forEach((el) => {
+  // 圖片與線稿 icon 都會讓游標放大；純文字不會
+  document.querySelectorAll(".gl-image, .line-art").forEach((el) => {
     el.addEventListener("pointerenter", () => document.body.classList.add("is-hovering-media"))
     el.addEventListener("pointerleave", () => document.body.classList.remove("is-hovering-media"))
   })
@@ -625,11 +741,17 @@ function pin(v) {
 let lastTime = 0
 function raf(time) {
   lenis.raf(time)
+  syncFlowIndex()
 
   // dt 上限 32ms：分頁切回前景時物理不會一次跳一大段
   const dtMs = lastTime ? Math.min(32, time - lastTime) : 16
   lastTime = time
-  if (fallPile) fallPile.update(dtMs, document.body.classList.contains("hero-active"), time)
+  /* 貼紙的三段：第一幕邊生邊落 → 第二幕整個凍住 → 結尾幕重新啟動讓它們落完再浮起。
+     結尾不再生新的，只把既有的跑完，否則會愈滾愈多。 */
+  if (fallPile) {
+    const heroOn = document.body.classList.contains("hero-active")
+    fallPile.update(dtMs, heroOn || endRise > 0.05, time, fallRise, heroOn)
+  }
 
   // 作品頁橫推：自己 ease，順便算出橫向速度餵進 shader
   let workVel = 0
@@ -653,17 +775,31 @@ function raf(time) {
     tlVel = (tlX - prevTlX) * tlPitch()
   }
 
-  // 背景藍→黑，綁捲動位置（不是綁「第幾頁」），切頁途中顏色才會跟著一起走。
-  // 分段：第一頁滿藍 → 第二頁剩微藍 0.18 → 第三頁收到 0。
+  /* 一次呼吸：藍 → 黑 → 藍。全部綁捲動位置，不綁「第幾頁」。
+     1. 首屏：滿藍 → 0.6（進入關於我）
+     2. 第二屏：0.6 → 0（全黑，讓內容當主角）
+     3. 距離結尾還有一個畫面高：0 → 滿藍（提早開始升，等到最後一頁才變會很跳）
+
+     貼紙跟在藍色後面走：藍色升到六成才開始恢復顏色並往上浮。
+     先環境、再元素、最後才是文字——三件事錯開才順，同時來會亂。
+     這裡刻意做成捲動驅動而不是時間排程：連續捲動下節奏是你在控，
+     用固定秒數的腳本會跟捲動打架。 */
   if (gl) {
     const vh = window.innerHeight
     const y = window.scrollY
-    const P2 = 0.4 // 第二頁的殘留藍度（0.18 太弱，畫面上看不出來）
+    const P2 = 0.6
     let mix
     if (y <= vh) mix = 1 - (1 - P2) * (y / vh)
     else if (y <= vh * 2) mix = P2 * (1 - (y - vh) / vh)
     else mix = 0
-    gl.setBlueMix(Math.max(0, Math.min(1, mix)))
+
+    const endTop = sections[sections.length - 1].offsetTop
+    endRise = clamp01((y - (endTop - vh)) / vh)
+    gl.setBlueMix(clamp01(Math.max(mix, endRise)))
+
+    // 貼紙：首頁原色；中段轉成暗色底紋；結尾隨 endRise 恢復顏色
+    fallRise = clamp01((endRise - 0.6) / 0.4)
+    gl.setFallGhost(index === 0 ? 0 : 1 - fallRise)
   }
 
   const velY = pinnedVelocity !== null ? pinnedVelocity : lenis.velocity || 0

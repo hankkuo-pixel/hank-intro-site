@@ -58,6 +58,7 @@ export const glConfig = {
   rippleSpeed: 2.6, // 擴散速度
   rippleFalloff: 3.4, // 隨距離衰減
   rippleDecay: 0.965, // 停手後衰減速度（越接近 1 拖越久）
+  fallGhostFloor: 0.2, // 貼紙離開首頁後保留的可見度（壓在所有照片與文字底下當背景）
 }
 
 const VERT = /* glsl */ `
@@ -720,9 +721,12 @@ export function createGlLayer(canvas) {
     const mesh = new THREE.Mesh(geometry, material)
     mesh.frustumCulled = false
     mesh.visible = false
-    // 疊放順序：data-gl-order 大的畫在上面。hero 的 Hello 設 100，掉落物預設 0，
-    // 所以貼紙一律從 Hello 背後掉過去。
-    mesh.renderOrder = parseInt(el.dataset.glOrder || "0", 10) * 1000 + items.length
+    // 疊放順序：data-gl-order 大的畫在上面。hero 的 Hello 設 100。
+    // 掉落貼紙一律壓到最底（只比背景高），才不會蓋住頁面上的照片；
+    // 沒特別指定的話它們會照生成順序排到照片前面去。
+    mesh.renderOrder = el.classList.contains("fall-img")
+      ? -500 + items.length
+      : parseInt(el.dataset.glOrder || "0", 10) * 1000 + items.length
     ;(isGlass ? sceneGlass : scene).add(mesh)
 
     const item = {
@@ -870,10 +874,12 @@ export function createGlLayer(canvas) {
       // 掉落物只在第一頁看得到。離開時要在 WebGL 這層淡出——
       // DOM 的 opacity 管不到貼圖平面（實測貼紙會跟著出現在其他頁）
       if (item.isFall) {
-        const target = fallGhost ? 1 : 0
-        item.gray += (target - item.gray) * 0.12
+        // fallGhost 現在是 0~1 的連續值：0 = 原色，1 = 灰階底紋。
+        // 淡出留一條 GHOST_FLOOR 的底線不歸零 —— 完全消失的話，
+        // 結尾再出現會像憑空冒出來，留一點點才叫前後呼應。
+        item.gray += (fallGhost - item.gray) * 0.12
         u.uGray.value = item.gray
-        u.uAlphaMul.value = 1 - item.gray
+        u.uAlphaMul.value = 1 - item.gray * (1 - glConfig.fallGhostFloor)
       }
 
       item.hover += (item.hoverTarget - item.hover) * 0.12
@@ -910,8 +916,8 @@ export function createGlLayer(canvas) {
       }
       if (item.isGlass && rt) u.uScene.value = rt.texture
       if (u.uTurnY && item.el.classList.contains("hero-hello")) {
-        u.uTurnY.value = turn * 0.86 // ±49°，負值代表從另一側轉進來
-        u.uTurnX.value = turn * -0.16
+        u.uTurnY.value = turn * 1.4 // ±80°，負值代表從另一側轉進來
+        u.uTurnX.value = turn * -0.04 // 幾乎純 Y 軸自轉，只留一點點傾斜避免太平面
         u.uAlphaMul.value = heroFade
       }
     }
@@ -935,13 +941,13 @@ export function createGlLayer(canvas) {
   /* 切頁 / 換作品時呼叫：目前這張的圖重播進場，其他歸零 */
   let activeSection = null
   let activeSlide = null
-  let fallGhost = false
+  let fallGhost = 0 // 0 = 原色，1 = 灰階底紋（連續值，結尾要用它做漸變）
   let turn = 0
   let turnTarget = 0
   let heroFade = 0
   let heroFadeTarget = 1
-  function setFallGhost(on) {
-    fallGhost = !!on
+  function setFallGhost(v) {
+    fallGhost = Math.max(0, Math.min(1, typeof v === "number" ? v : v ? 1 : 0))
   }
   function setActive(section, slide = null) {
     if (activeSection === section && activeSlide === slide) return

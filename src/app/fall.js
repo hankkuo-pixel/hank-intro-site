@@ -102,9 +102,14 @@ export function createFallPile(layer, sources, glScan, glRemove) {
   window.addEventListener("resize", resize)
 
   /* 每幀：只有在第一頁才推進物理，離開就凍住 */
-  function update(dtMs, active, now) {
+  /* rise：0 = 正常堆在底部；1 = 完全升到畫面上方散開（結尾的收尾動作）。
+     不能把重力反轉來做——那樣它們會撞到畫面頂端彈回來很難看，
+     所以物理照樣凍住，改成每張各自速度不同的位移。 */
+  /* active   ：要不要推進物理（第一幕與結尾幕才推，中間凍住）
+     allowSpawn：要不要繼續生新的貼紙（只有第一幕生，結尾幕只讓既有的落完） */
+  function update(dtMs, active, now, rise = 0, allowSpawn = true) {
     if (active) {
-      if (items.length < fallConfig.maxAlive && now - lastSpawn > fallConfig.spawnEvery) {
+      if (allowSpawn && items.length < fallConfig.maxAlive && now - lastSpawn > fallConfig.spawnEvery) {
         spawnOne()
         spawned++
         lastSpawn = now
@@ -126,10 +131,20 @@ export function createFallPile(layer, sources, glScan, glRemove) {
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i]
       const { x, y } = it.body.position
-      it.el.style.transform = `translate3d(${(x - it.size / 2).toFixed(1)}px, ${(y - it.size / 2).toFixed(1)}px, 0) rotate(${(
-        (it.body.angle * 180) /
-        Math.PI
-      ).toFixed(1)}deg)`
+      // 收尾：每張的上升距離與橫向飄移都跟自己的 seed 綁，才不會整批一起平移
+      // seed 是遞增編號（0,1,2…），不是 0~1 的小數，直接乘會讓後面的貼紙
+      // 被抬到好幾個畫面高之外。先換算成 0~1 再用。
+      // 升幅刻意壓小：全部飛出畫面的話，結尾那一頁反而看不到貼紙。
+      const r01 = Math.abs(Math.sin(it.seed * 12.9898) * 43758.5453) % 1
+      // 幅度刻意很小：浮太多會把原本緊實的一堆拉散、看起來像卡在半空沒落完。
+      // 結尾要的是「同一堆貼紙、恢復顏色」，不是重新灑一次。
+      const lift = rise > 0 ? rise * vh * (r01 * 0.04) : 0
+      const drift = rise > 0 ? Math.sin(it.seed * 5.3) * rise * 22 : 0
+      const spin = rise > 0 ? Math.sin(it.seed * 3.1) * rise * 7 : 0
+      const px = x - it.size / 2 + drift
+      const py = y - it.size / 2 - lift
+      const deg = (it.body.angle * 180) / Math.PI + spin
+      it.el.style.transform = `translate3d(${px.toFixed(1)}px, ${py.toFixed(1)}px, 0) rotate(${deg.toFixed(1)}deg)`
 
       // 從上方進來時淡入，之後就一直留著不消失
       it.el.style.opacity = Math.max(0, Math.min(1, (y + it.size) / 200)).toFixed(3)

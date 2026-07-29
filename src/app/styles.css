@@ -8,10 +8,17 @@
 :root {
   --cubic-66: cubic-bezier(0.66, 0, 0.01, 1);
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  /* 切頁三層用：進場減速卡位、離場加速逃走 */
+  --ease-push: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-leave: cubic-bezier(0.55, 0, 1, 0.45);
+  --push-in: 14vh; /* 新頁待命位置 */
+  --push-out: 12vh; /* 舊頁離場位移（配 0.55s 就是 ×1.25 的速度感） */
 
   --blue: #071759;
   --ink: #080909;
   --accent: #c0fe04;
+  /* 線稿用的黃，取樣自貼紙裡的星星，跟既有視覺同一家族 */
+  --accent-2: #f8d008;
   /* 舞台：整站限寬 1920，超出的部分裁掉、內容置中 */
   --stage: 1920px;
   --gutter: max(0px, calc((100vw - var(--stage)) / 2));
@@ -349,13 +356,88 @@ body:not(.cursor-glow-on) .cursor-line {
 }
 
 /* 要等開場溶解跑完才放行，否則首頁的進場全部在黑幕後面播完，掀開時已經定位 */
-body.intro-done .section.is-active .mask > span {
+body.intro-done .section:is(.is-active, .in-view) .mask > span {
   transform: translateY(0);
 }
 
-body.intro-done .section.is-active .reveal {
+body.intro-done .section:is(.is-active, .in-view) .reveal {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* ---------- 切頁三層速度差：「下面的東西往上推」 ----------
+   L0 背景：WebGL 藍底是固定全螢幕，本來就不隨捲動走 → 最慢的一層
+   L1 舊頁：不等延遲、用加速曲線先走（0.55s）
+   L2 新頁：晚 120ms 才進場、用減速曲線卡位（0.85s）
+   舊的先逃、新的後到，中間的時間差就是「推」的力道來源。
+   往回捲時（body.nav-up）整組方向反轉成由上往下落。 */
+.section > *:not(.grid-lines):not(.hero-hello-wrap) {
+  transform: translateY(var(--sec-off, 0px));
+  opacity: var(--sec-op, 1);
+  transition:
+    transform 0.85s var(--ease-push),
+    opacity 0.5s var(--ease-out);
+  transition-delay: var(--sec-delay, 0ms);
+}
+
+/* 還沒輪到的頁：依方向在畫面外待命 */
+body.nav-down .section:not(.is-active):not(.in-view) {
+  --sec-off: var(--push-in);
+  --sec-op: 0;
+}
+
+body.nav-up .section:not(.is-active):not(.in-view) {
+  --sec-off: calc(var(--push-in) * -1);
+  --sec-op: 0;
+}
+
+/* 正在離開的頁：位移比新頁大（×1.25），先走 */
+body.nav-down .section.is-leaving {
+  --sec-off: calc(var(--push-out) * -1);
+  --sec-op: 0;
+}
+
+body.nav-up .section.is-leaving {
+  --sec-off: var(--push-out);
+  --sec-op: 0;
+}
+
+.section.is-leaving > *:not(.grid-lines):not(.hero-hello-wrap) {
+  transition:
+    transform 0.55s var(--ease-leave),
+    opacity 0.35s linear;
+  transition-delay: 0ms;
+}
+
+.section:is(.is-active, .in-view) {
+  --sec-off: 0px;
+  --sec-op: 1;
+  --sec-delay: 120ms;
+}
+
+/* 連續捲動模式：位移交給真正的捲動，不再做「舊頁被推走」那一下，
+   否則區塊還看得見就先飛走了。進場的淡入與微幅上推保留。 */
+body.mode-flow .section.is-leaving {
+  --sec-off: 0px;
+  --sec-op: 1;
+}
+
+body.mode-flow .section.in-view {
+  --sec-delay: 0ms;
+}
+
+body.mode-flow .section:not(.in-view) {
+  --sec-off: 6vh;
+}
+
+/* 網格線在非目前頁時退到更淡，補景深。
+   不做位移——移動會動到設計網格的線位。 */
+.grid-lines {
+  transition: opacity 0.5s var(--ease-out);
+}
+
+.section:not(.is-active):not(.in-view) .grid-lines {
+  opacity: 0.1;
 }
 
 /* ---------- WebGL 圖片佔位框 ---------- */
@@ -475,7 +557,9 @@ body.intro-done .section.is-active .reveal {
   top: 50%;
   width: min(74vw, 94rem);
   aspect-ratio: 1693 / 929;
-  transform: translate(-50%, -58%);
+  /* 用 translate 屬性而非 transform：CSS 的套用順序是 translate → rotate → scale → transform，
+     寫成 transform 會讓 scale 連置中位移一起縮，軸心跑到圖的右邊緣（實測偏移 320px）。 */
+  translate: -50% -58%;
   /* 進場 0.8 → 1；出場 1 → 0.4。3D 旋轉與透明度在 shader（見 gl.js） */
   scale: 0.8;
   transition: scale 1.35s cubic-bezier(0.66, 0, 0.01, 1);
@@ -553,8 +637,8 @@ body.intro-done .hero-hello {
 .skill-tags li {
   padding: 0.42rem 1rem;
   border: 1px solid transparent;
-  /* 底部堆滿螢光色貼紙，沒有這層底字會讀不出來 */
-  background: rgba(8, 9, 9, 0.66);
+  /* 原本壓一層 rgba(8,9,9,0.66) 擋住底下的螢光貼紙，依需求改為全透明 */
+  background: transparent;
   transition: border-color 0.45s cubic-bezier(0.66, 0, 0.01, 1);
   font-family: var(--mono);
   font-size: 1rem;
@@ -572,7 +656,7 @@ body.intro-done .hero-hello {
   gap: 0.6rem;
   padding: 0.5rem 1rem;
   border: 1px solid transparent;
-  background: rgba(8, 9, 9, 0.66);
+  background: transparent;
   font-family: var(--mono);
   font-size: 0.68rem;
   letter-spacing: 0.08em;
@@ -1092,9 +1176,8 @@ body.hero-active .fall-layer span {
 
 /* 時間軸的引言 */
 .tl-lead {
-  width: var(--stage-inner, 1600px);
-  max-width: 100%;
-  margin: 2.4rem auto 0;
+  width: 100%;
+  margin: 0 0 2rem;
   font-size: 15px;
   color: rgba(247, 247, 240, 0.6);
 }
@@ -1108,52 +1191,18 @@ body.hero-active .fall-layer span {
 
 .tl-viewport {
   position: relative;
-  flex: 1;
-  width: var(--stage-inner, 1600px);
-  max-width: 100%;
-  margin: 0 auto;
-  padding: 1rem 0 3rem;
-}
-
-/* 貫穿整段的縱軸 */
-.tl-axis {
-  position: absolute;
-  left: 7px;
-  top: 1.6rem;
-  bottom: 3rem;
-  width: 1px;
-  background: linear-gradient(180deg, rgba(247, 247, 240, 0.28), rgba(247, 247, 240, 0.06));
+  width: 100%;
+  padding: 0.5rem 0 0;
 }
 
 .tl-track {
   display: flex;
   flex-direction: column;
-  gap: 4.5rem;
+  gap: 3.5rem;
 }
 
 .tl-stop {
   position: relative;
-  padding-left: 46px;
-}
-
-/* 軸上的節點 */
-.tl-mark {
-  position: absolute;
-  left: 0;
-  top: 6px;
-  width: 15px;
-  height: 15px;
-  border-radius: 50%;
-  border: 1px solid rgba(247, 247, 240, 0.3);
-  background: var(--ink);
-}
-
-.tl-mark::after {
-  content: "";
-  position: absolute;
-  inset: 4px;
-  border-radius: 50%;
-  background: var(--accent);
 }
 
 .tl-head {
@@ -1168,10 +1217,12 @@ body.hero-active .fall-layer span {
   color: var(--accent);
 }
 
+/* 與 .rs-exp-co / .rs-co 同一級：18px 粗體 */
 .tl-title {
   margin: 0;
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 800;
+  line-height: 32px;
   letter-spacing: 0.01em;
 }
 
@@ -1198,13 +1249,7 @@ body.hero-active .fall-layer span {
   width: 272px;
 }
 
-/* 最後一站沒有照片，節點畫成空心 */
-.tl-stop.is-last .tl-mark::after {
-  inset: 4px;
-  background: transparent;
-  border: 1px solid var(--accent);
-}
-
+/* 最後一站是「還不知道」，標題淡一階 */
 .tl-stop.is-last .tl-title {
   color: rgba(247, 247, 240, 0.55);
 }
@@ -1324,6 +1369,445 @@ body.hero-active .fall-layer span {
   font-size: 0.68rem;
   letter-spacing: 0.06em;
   color: rgba(247, 247, 240, 0.4);
+}
+
+/* =========================================================
+   區塊內元件的 stagger 進場
+   直接子層：沿用切頁三層那組 transition，只覆寫 --sec-delay 排隊，
+             不另外寫 transform，避免兩條規則搶同一個屬性。
+   巢狀元件：自己寫 transition，delay 從該頁成為 .is-active 起算。
+   方向：--st-dir 平常是 1（由下往上推），往回捲時 body.nav-up 改成 -1。
+   ========================================================= */
+body.nav-up {
+  --st-dir: -1;
+}
+
+/* ---- 01 HERO：直接子層排隊 ---- */
+.hero:is(.is-active, .in-view) > .hero-top {
+  --sec-delay: 140ms;
+}
+.hero:is(.is-active, .in-view) > .hero-bottom {
+  --sec-delay: 200ms;
+}
+.hero:is(.is-active, .in-view) > .hero-cursor {
+  --sec-delay: 260ms;
+}
+.hero:is(.is-active, .in-view) > .hero-scroll {
+  --sec-delay: 320ms;
+}
+
+/* 四個技能標籤逐一上來 */
+.hero .skill-tags li {
+  opacity: 0;
+  transform: translateY(calc(1.6vh * var(--st-dir, 1)));
+  transition:
+    opacity 0.45s var(--ease-out),
+    transform 0.6s var(--ease-push),
+    border-color 0.45s var(--cubic-66),
+    letter-spacing 0.3s var(--ease-out);
+}
+.hero:is(.is-active, .in-view) .skill-tags li {
+  opacity: 1;
+  transform: none;
+}
+.hero:is(.is-active, .in-view) .skill-tags li:nth-child(1) {
+  transition-delay: 260ms;
+}
+.hero:is(.is-active, .in-view) .skill-tags li:nth-child(2) {
+  transition-delay: 300ms;
+}
+.hero:is(.is-active, .in-view) .skill-tags li:nth-child(3) {
+  transition-delay: 340ms;
+}
+.hero:is(.is-active, .in-view) .skill-tags li:nth-child(4) {
+  transition-delay: 380ms;
+}
+
+/* ---- 02 ABOUT ---- */
+.about:is(.is-active, .in-view) > .kicker {
+  --sec-delay: 160ms;
+}
+.about:is(.is-active, .in-view) > .fig-fit {
+  --sec-delay: 260ms;
+}
+
+.about .rs-avatar,
+.about .rs-intro p,
+.about .rs-facts > div,
+.about .rs-block {
+  opacity: 0;
+  transform: translateY(calc(2.4vh * var(--st-dir, 1)));
+  transition:
+    opacity 0.55s var(--ease-out),
+    transform 0.8s var(--ease-push);
+}
+
+.about .rs-avatar {
+  transform: translateY(calc(4vh * var(--st-dir, 1)));
+}
+
+/* 左欄的東西跟著整頁進場；右欄的區塊改由各自「捲到才播」（見 .rs-block.in-view），
+   這一頁併入生活之後很長，整批一起播的話下半部會在你捲到之前就演完。 */
+.about:is(.is-active, .in-view) .rs-avatar,
+.about:is(.is-active, .in-view) .rs-intro p,
+.about:is(.is-active, .in-view) .rs-facts > div {
+  opacity: 1;
+  transform: none;
+}
+
+.about:is(.is-active, .in-view) .rs-avatar {
+  transition-delay: 300ms;
+}
+
+/* 自介五段：間隔 70ms */
+.about:is(.is-active, .in-view) .rs-intro p:nth-child(1) {
+  transition-delay: 380ms;
+}
+.about:is(.is-active, .in-view) .rs-intro p:nth-child(2) {
+  transition-delay: 450ms;
+}
+.about:is(.is-active, .in-view) .rs-intro p:nth-child(3) {
+  transition-delay: 520ms;
+}
+.about:is(.is-active, .in-view) .rs-intro p:nth-child(4) {
+  transition-delay: 590ms;
+}
+.about:is(.is-active, .in-view) .rs-intro p:nth-child(5) {
+  transition-delay: 660ms;
+}
+
+/* 基本資料五列：間隔 50ms */
+.about:is(.is-active, .in-view) .rs-facts > div:nth-child(1) {
+  transition-delay: 460ms;
+}
+.about:is(.is-active, .in-view) .rs-facts > div:nth-child(2) {
+  transition-delay: 510ms;
+}
+.about:is(.is-active, .in-view) .rs-facts > div:nth-child(3) {
+  transition-delay: 560ms;
+}
+.about:is(.is-active, .in-view) .rs-facts > div:nth-child(4) {
+  transition-delay: 610ms;
+}
+.about:is(.is-active, .in-view) .rs-facts > div:nth-child(5) {
+  transition-delay: 660ms;
+}
+
+/* 右欄三個區塊：捲到才播（這頁比一個畫面長） */
+.about .rs-block.in-view {
+  opacity: 1;
+  transform: none;
+  transition-delay: 60ms;
+}
+
+/* 螢光小點與小方塊：彈一下（回彈曲線）。
+   用 scale 屬性而非 transform，才能跟 hover 放大共存不打架。 */
+.about .rs-dot,
+.about .rs-sq {
+  scale: 0;
+  transition: scale 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.about:is(.is-active, .in-view) .rs-dot,
+.about .rs-block.in-view .rs-dot {
+  scale: 1;
+  transition-delay: 320ms;
+}
+.about:is(.is-active, .in-view) .rs-sq,
+.about .rs-block.in-view .rs-sq {
+  scale: 1;
+  transition-delay: 240ms;
+}
+
+/* 時間軸是直的：由上往下畫出來 */
+.life .life:is(.is-active, .in-view) .life .tl-stop.in-view .tl-head {
+  opacity: 0;
+  transform: translateY(calc(2vh * var(--st-dir, 1)));
+  transition:
+    opacity 0.5s var(--ease-out),
+    transform 0.75s var(--ease-push);
+}
+.tl-stop.in-view .tl-head {
+  opacity: 1;
+  transform: none;
+  transition-delay: 60ms;
+}
+
+/* 照片：同一段內每張間隔 80ms，從節點亮起後開始 */
+.tl-shot {
+  opacity: 0;
+  transform: translateY(calc(6vh * var(--st-dir, 1))) scale(0.92);
+  transition:
+    opacity 0.5s var(--ease-out),
+    transform 0.8s var(--ease-push);
+}
+.tl-stop.in-view .tl-shot {
+  opacity: 1;
+  transform: none;
+}
+.tl-stop.in-view .tl-shot:nth-child(1) {
+  transition-delay: 140ms;
+}
+.tl-stop.in-view .tl-shot:nth-child(2) {
+  transition-delay: 220ms;
+}
+.tl-stop.in-view .tl-shot:nth-child(3) {
+  transition-delay: 300ms;
+}
+.tl-stop.in-view .tl-shot:nth-child(4) {
+  transition-delay: 380ms;
+}
+.tl-stop.in-view .tl-shot:nth-child(5) {
+  transition-delay: 460ms;
+}
+.tl-stop.in-view .tl-shot:nth-child(6) {
+  transition-delay: 540ms;
+}
+.tl-stop.in-view .tl-shot:nth-child(7) {
+  transition-delay: 620ms;
+}
+.tl-stop.in-view .tl-shot:nth-child(8) {
+  transition-delay: 700ms;
+}
+.tl-stop.in-view .tl-shot:nth-child(9) {
+  transition-delay: 780ms;
+}
+.tl-stop.in-view .tl-shot:nth-child(10) {
+  transition-delay: 860ms;
+}
+
+/* ---- 04 ENDING ---- */
+.ending:is(.is-active, .in-view) > .kicker {
+  --sec-delay: 160ms;
+}
+.ending:is(.is-active, .in-view) > .ending-mid {
+  --sec-delay: 240ms;
+}
+.ending:is(.is-active, .in-view) > .ending-foot {
+  --sec-delay: 560ms;
+}
+
+/* 大標與結語改走逐字動畫（playType），時序由 data-scramble / type-line 的
+   offset 決定，這裡不再需要遮罩推出與 reveal 的延遲。 */
+
+/* 短直條：由上往下長出來 */
+.ending .ending-bar {
+  transform: translateY(2px) scaleY(0);
+  transform-origin: top center;
+  transition: transform 0.45s var(--ease-push);
+}
+.ending:is(.is-active, .in-view) .ending-bar {
+  transform: translateY(2px) scaleY(1);
+  transition-delay: 340ms;
+}
+
+/* =========================================================
+   線稿插畫：捲到定位點才一筆一筆畫出來
+   每條線都有 pathLength="100"，所以虛線長度固定用 100，
+   把 dashoffset 從 100 收到 0 就是「線被畫出來」。
+   各條線的先後順序寫在 HTML 的 style="--ld: xxxms"。
+   ========================================================= */
+.line-art {
+  display: block;
+  width: min(230px, 100%);
+  height: auto;
+  margin: 2.4rem 0 0;
+  overflow: visible;
+}
+
+.line-art path,
+.line-art circle {
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  transition: stroke-dashoffset 1.25s cubic-bezier(0.65, 0, 0.35, 1);
+  transition-delay: var(--ld, 0ms);
+}
+
+/* 右欄的線稿靠右擺，跟左側的文字欄拉開 */
+.line-art--right {
+  width: min(260px, 100%);
+  margin: 0 0 0 auto;
+}
+
+/* 生活時間軸：線稿放在該段照片右邊的留白處 */
+/* 生活跟上面三個區塊共用同一條垂直線——不要往左跨出去。
+   跨出去雖然照片比較大，但「代表作品」在右欄、「生活」突然跳到最左邊，
+   中間 660px 的落差看起來就是跑版。對齊優先。 */
+.rs-block--life {
+  --break-left: 0px;
+}
+
+/* 標題與導言跟著整塊一起靠左，不要縮回右欄。
+   縮回去的話標題會離自己的內容差快 500px，看起來像飄在半空中。
+   左欄捲到這裡本來就淡出了，整塊當一個滿版章節反而乾淨。 */
+.rs-block--life > .rs-title,
+.rs-block--life > .tl-lead {
+  width: auto;
+}
+
+@media (max-width: 1100px) {
+  .rs-block--life {
+    --break-left: 0px;
+  }
+}
+
+/* 捲進「生活」之後左欄讓開，版面整個給照片。
+   頭像是 WebGL 畫的，DOM 的透明度管不到那張貼圖，
+   所以要把佔位框縮到 0，貼圖平面才會跟著收掉。 */
+.fig-left {
+  transition:
+    opacity 0.6s var(--ease-out),
+    transform 0.6s var(--ease-push);
+}
+
+.about.life-open .fig-left {
+  opacity: 0;
+  transform: translateX(-24px);
+  pointer-events: none;
+}
+
+.about.life-open .rs-avatar {
+  animation: none;
+  scale: 0;
+}
+
+/* 線稿當段落標記：站在原本年份的位置，小標正上方靠左 */
+.tl-art {
+  width: 80px;
+  margin: 0 0 6px -4px;
+  pointer-events: none;
+}
+
+.tl-art path,
+.tl-art circle {
+  stroke-width: 4; /* 縮到 80px 後線會太細，加粗維持辨識度 */
+}
+
+/* 滑到 icon 上：整個放大一點、線條變亮，游標也會跟著放大（見 is-hovering-media）。
+   pointer-events 要打開，不然接不到滑鼠。 */
+.tl-art {
+  pointer-events: auto;
+  transition: scale 0.32s var(--ease-push);
+}
+
+.tl-art:hover {
+  scale: 1.12;
+}
+
+.tl-art path,
+.tl-art circle {
+  transition:
+    stroke-dashoffset 1.25s cubic-bezier(0.65, 0, 0.35, 1),
+    filter 0.32s var(--ease-out),
+    stroke-width 0.32s var(--ease-out);
+  transition-delay: var(--ld, 0ms), 0ms, 0ms;
+}
+
+.tl-art:hover path,
+.tl-art:hover circle {
+  stroke-width: 5;
+  filter: drop-shadow(0 0 6px currentColor);
+}
+
+.line-art .ln-g {
+  stroke: var(--accent);
+}
+
+.line-art .ln-y {
+  stroke: var(--accent-2);
+}
+
+.line-art.in-view path,
+.line-art.in-view circle {
+  stroke-dashoffset: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .line-art path,
+  .line-art circle {
+    stroke-dashoffset: 0;
+    transition: none;
+  }
+}
+
+/* =========================================================
+   常駐微動畫（不只切頁那一下，平常也有呼吸與 hover 回應）
+   —— 全部用 scale 屬性或獨立的 transform，不跟上面的進場規則搶。
+   ========================================================= */
+
+/* 技能標籤：滑過時邊框亮起、字距微開 */
+.hero .skill-tags li:hover {
+  border-color: rgba(255, 255, 255, 0.7);
+  letter-spacing: 0.1em;
+}
+
+/* 頭像：6 秒一次的極慢呼吸 */
+.about .rs-avatar {
+  animation: avatar-breathe 6s ease-in-out infinite;
+}
+
+@keyframes avatar-breathe {
+  0%,
+  100% {
+    scale: 1;
+  }
+  50% {
+    scale: 1.015;
+  }
+}
+
+/* 滑到某一組技能／經歷／作品，該行的螢光點放大 */
+.about .rs-group:hover .rs-dot,
+.about .rs-exp:hover .rs-dot,
+.about .rs-work:hover .rs-dot {
+  scale: 1.4;
+}
+
+/* 生活照：滑過時抬起來一點 */
+.tl-stop.in-view .tl-shot:hover {
+  transform: translateY(-4px);
+  transition-duration: 0.28s;
+  transition-delay: 0ms;
+}
+
+/* 時間軸節點：進到視窗後持續脈動，指出「你在這一段」 */
+.tl-stop.in-view @keyframes mark-pulse {
+  0%,
+  100% {
+    scale: 1;
+    opacity: 1;
+  }
+  50% {
+    scale: 0.72;
+    opacity: 0.55;
+  }
+}
+
+/* 結語的螢光直條：緩慢呼吸 */
+.ending:is(.is-active, .in-view) .ending-bar {
+  animation: bar-breathe 3.2s ease-in-out infinite 0.8s;
+}
+
+@keyframes bar-breathe {
+  0%,
+  100% {
+    scale: 1 1;
+  }
+  50% {
+    scale: 1 1.18;
+  }
+}
+
+/* 會動的東西一律尊重系統的「減少動態」設定 */
+@media (prefers-reduced-motion: reduce) {
+  .about .rs-avatar,
+  .tl-stop.in-view .tl-mark::after,
+  .ending:is(.is-active, .in-view) .ending-bar {
+    animation: none;
+  }
 }
 
 /* ---------- RWD ---------- */
@@ -1457,11 +1941,7 @@ body.hero-active .fall-layer span {
     column-gap: 0;
   }
 
-  .tl-axis {
-    left: 0;
-  }
-
-  .tl-stop.is-left,
+    .tl-stop.is-left,
   .tl-stop.is-right {
     grid-column: 1;
     align-items: flex-start;
