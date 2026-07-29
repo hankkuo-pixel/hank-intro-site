@@ -353,7 +353,8 @@ const videoObserver = new IntersectionObserver(
       const v = e.target
       v.muted = true
       v.playsInline = true
-      v.playbackRate = 1 / 1.3 // 放慢成 1.3 倍長：35.5 秒 → 46.2 秒
+      // 放慢已經做進影片檔本身（35.5 秒 → 49.7 秒），這裡不再另外調速度，
+      // 否則會變成慢上加慢。原始未放慢的檔案留在 _original/。
       if (e.isIntersecting) v.play().catch(() => {})
       else v.pause()
     }

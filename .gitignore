@@ -13,3 +13,6 @@ verify-shots/
 
 # 損毀備份
 *.corrupt
+
+# 影片原檔備份（未放慢版，不進網站也不進版控）
+_original/
